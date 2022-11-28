@@ -70,10 +70,8 @@ python main_distill_mutual.py ./data/nerf_synthetic/chair  --teacher_type hash -
 python main_distill_mutual.py ./data/nerf_synthetic/chair --model_type mlp --ckpt PATH/TO/CKPT.pth --test --data_type synthetic --workspace ./log/eval_student/mlp_chair
 ```
 
-where you replace PATH/TO/CKPT.pt with your trained model checkpoint, and PATH/TO/GT.json with the json file in NeRF-Synthetic
-dataset. Then, just run the  [ATE toolbox](https://github.com/uzh-rpg/rpg_trajectory_evaluation) on the `evaluation` directory.
-
-## [More detailed parameter description and running commonds]()
+## More detailed parameter description and running commonds
+Please refer to [More running description]() for details of training different types of datasets, parameter adjustment, key settings, etc
 
 ## Citation
 
