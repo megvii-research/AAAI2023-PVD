@@ -3,8 +3,8 @@ from time import time
 import torch.nn as nn
 import torch.nn.functional as F
 
-from encoding import get_encoder
-from activation import trunc_exp
+from tools.encoding import get_encoder
+from tools.activation import trunc_exp
 from .renderer import NeRFRenderer
 import raymarching
 

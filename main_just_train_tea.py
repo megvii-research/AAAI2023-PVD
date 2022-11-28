@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     ### training options
-    parser.add_argument("--iters", type=int, default=50000, help="training iters")
+    parser.add_argument("--iters", type=int, default=40000, help="training iters")
     parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
     parser.add_argument("--ckpt", type=str, default="latest")
     parser.add_argument(
@@ -96,13 +96,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bound",
         type=float,
-        default=2,
+        default=1,
         help="assume the scene is bounded in box[-bound, bound]^3, if > 1, will invoke adaptive ray marching.",
     )
     parser.add_argument(
         "--scale",
         type=float,
-        default=0.33,
+        default=0.8,
         help="scale camera location into box[-bound, bound]^3",
     )
     parser.add_argument(
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument('--resolution1', type=int, default=300)
     parser.add_argument("--upsample_model_steps", type=int, action="append", default=[1e10])
 
-    parser.add_argument('--loss_type', type=str, default='norm', choices=['normL2', 'L2', 'normL1', 'L1'])
+    parser.add_argument('--loss_type', type=str, default='L2', choices=['normL2', 'L2', 'normL1', 'L1'])
 
     parser.add_argument('--PE', type=int, default=10)
     parser.add_argument('--nerf_layer_num', type=int, default=8)
@@ -207,6 +207,8 @@ if __name__ == "__main__":
     opt.update_stu_extra = True
     opt.render_stu_first = True
     opt.O = True
+    if opt.model_type == 'mlp':
+        opt.lr *= 0.1
 
     if opt.O:
         opt.fp16 = True
@@ -250,7 +252,7 @@ if __name__ == "__main__":
 
     if opt.test or opt.test_teacher or opt.test_metric:
         trainer = Trainer(
-            "hash",
+            opt.model_type,
             opt,
             model_tea,
             model_stu,
@@ -283,7 +285,7 @@ if __name__ == "__main__":
         print(scheduler)
 
         trainer = Trainer(
-            "ngp",
+            opt.model_type,
             opt,
             model_tea,
             model_stu,

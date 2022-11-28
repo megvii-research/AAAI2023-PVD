@@ -117,19 +117,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bound",
         type=float,
-        default=2,
+        default=1,
         help="assume the scene is bounded in box[-bound, bound]^3, if > 1, will invoke adaptive ray marching.",
     )
     parser.add_argument(
         "--scale",
         type=float,
-        default=0.33,
+        default=0.8,
         help="scale camera location into box[-bound, bound]^3",
     )
     parser.add_argument(
         "--dt_gamma",
         type=float,
-        default=1 / 128,
+        default=0,
         help="dt_gamma (>=0) for adaptive ray marching. set to 0 to disable, >0 to accelerate rendering (but usually with worse quality)",
     )
     parser.add_argument(
@@ -210,6 +210,8 @@ if __name__ == "__main__":
     opt.stage_iters = eval(opt.stage_iters)
     opt.O = True  # always use -O
     opt.render_stu_first = True
+    if opt.model_type == 'mlp':
+        opt.lr *= 0.1
     if 'tensors' == opt.model_type or 'tensors' == opt.teacher_type:  # plenoxel have no features
         opt.stage_iters['stage1'] = -1
     save_codes_env(opt.workspace)
