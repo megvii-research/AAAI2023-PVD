@@ -13,11 +13,11 @@ We recommand using [Anaconda](https://www.anaconda.com/) to setup the environmen
 ```
 conda create --name pvd python=3.7
 conda activate gnerf
-pip install -r requirements.txt
+pip install -r ./tools/requirements.txt
 ```
 *Step2*: Install extension modules. (Draw from the great project [torch-ngp](https://github.com/ashawkey/torch-ngp) that we mainly rely on.)
 ```
-bash install_extension.sh
+bash ./tools/install_extension.sh
 ```
 
 ## Datastes & Pretrained-teacher models
