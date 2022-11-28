@@ -72,7 +72,7 @@ python main_distill_mutual.py ./data/nerf_synthetic/chair --model_type mlp --ckp
 ```
 
 ## More detailed parameter description and running commonds
-Please refer to [More running description]() for details of training different types of datasets, parameter adjustment, key settings, etc
+Please refer to [More running description](https://github.com/megvii-research/AAAI2023-PVD/blob/main/tools/details.md) for details of training different types of datasets, parameter adjustment, key settings, etc
 
 ## Citation
 
