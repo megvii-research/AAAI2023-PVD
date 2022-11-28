@@ -56,13 +56,14 @@ dataset. Then, just run the  [ATE toolbox](https://github.com/uzh-rpg/rpg_trajec
 ## Citation
 
 If you find our code or paper useful, please consider citing
-
+```
 @article{pvd2023,
   author    = {Fang, Shuangkang and Xu, Weixin and Wang, Heng and Yang, Yi and Wang, Yufeng and Zhou, Shuchang},
   title     = {One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation},
   journal   = {AAAI},
   year      = {2023}
 }
+```
 
 ### Acknowledgement
 We would like to thank [ingp](https://github.com/NVlabs/instant-ngp)  [torch-ngp](https://github.com/ashawkey/torch-ngp) [TensoRF](https://github.com/apchenstu/TensoRF) [Plenoxels](https://github.com/sxyu/svox2) [nerf-pytorch](https://github.com/yenchenlin/nerf-pytorch)  for their great frameworks!
