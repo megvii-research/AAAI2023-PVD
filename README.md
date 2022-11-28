@@ -50,8 +50,7 @@ python eval.py --ckpt PATH/TO/CKPT.pt --ckpt_teacher PATH/TO/GT.json --test
 where you replace PATH/TO/CKPT.pt with your trained model checkpoint, and PATH/TO/GT.json with the json file in NeRF-Synthetic
 dataset. Then, just run the  [ATE toolbox](https://github.com/uzh-rpg/rpg_trajectory_evaluation) on the `evaluation` directory.
 
-## More detailed parameter description
-[parameter description]() to improve the performance and stability.
+## [More detailed parameter description and running commonds]()
 
 ## Citation
 
