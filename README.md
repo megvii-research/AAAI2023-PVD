@@ -1,50 +1,73 @@
 ## One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023)
 
 
-## WIP: [Project Page](http://sk-fun.fun/PVD/) | [Latest arXiv](..) | [Datasets]() | [ckpts]() |
+## WIP: [Project Page](http://sk-fun.fun/PVD/) | [Paper](..) | [Datasets]() | [ckpts]() |
 
 ## Introduction
 In this paper, we propose Progressive Volume Distillation (PVD), a systematic distillation method that allows any-to-any conversions between different neural architectures, including MLP(NeRF), sparse(Plenoxels) or low-rank tensors(TensoRF), hash tables(INGP).
 
 ## Installation
 We recommand using [Anaconda](https://www.anaconda.com/) to setup the environment. Run the following commands:
-
 *Step1*: Create a conda environment named 'pvd'
 ```
 conda create --name pvd python=3.7
 conda activate gnerf
 pip install -r requirements.txt
 ```
-
 *Step2*: Install extension modules. (Draw from the great project [torch-ngp](https://github.com/ashawkey/torch-ngp) that we mainly rely on.)
 ```
-bash scripts/install_ext.sh
+bash install_extension.sh
 ```
 
 ## Datastes & Pretrained-teacher models
-You can download the following datasets and put them under ./data.
-WIP: [Synthetic-NeRF]() [LLFF]() [Tanks&Temples]()
-You can download the pretrained teacher models and put them under ./teacher, or train a teacher model according to the guidance of the next item (it only takes dozens of minutes).
-WIP: [Pretrain]()
+You can download from WIP: [Synthetic-NeRF]() [LLFF]() [Tanks&Temples]()
+
+You can download from WIP [pretrained teacher models](), or just train a teacher model according to the follow guidance.
 
 ## Train a teacher
 ```
-python main_just_train_tea.py ./config/CONFIG.yaml --data_dir PATH/TO/DATASET
+# train a hash-based(INGP) teacher
+python main_just_train_tea.py ./data/nerf_synthetic/chair --model_type hash --data_type synthetic  --workspace ./log/train_teacher/hash_chair
+
+# train a sparse-tensor-based(TensoRF VM-decomposion) teacher
+python main_just_train_tea.py ./data/nerf_synthetic/chair --model_type vm --data_type synthetic  --workspace ./log/train_teacher/vm_chair
+
+# train a MLP-based(NeRF) teacher
+python main_just_train_tea.py ./data/nerf_synthetic/chair --model_type mlp --data_type synthetic  --workspace ./log/train_teacher/mlp_chair
+
+# train a tensors-based(Plenoxels) teacher
+python main_just_train_tea.py ./data/nerf_synthetic/chair --model_type tensors --data_type synthetic  --workspace ./log/train_teacher/tensors_chair
+
 ```
 
 ## Distill a student
 ```
-python main_distill.py XXX
+# teacher: hash(INGP),  student: vm(tensoRF)
+python3 main_distill_mutual.py  ./data/nerf_synthetic/chair \
+                    --data_type synthetic \
+                    --teacher_type hash \
+                    --ckpt_teacher ./log/train_teacher/hash_chair/checkpoints/XXX.pth \
+                    --model_type vm \
+                    --workspace ./log/distill_student/hash2vm/chair
+                    
+# teacher: MLP(NeRF),  student: tensors(Plenoxels)
+python3 main_distill_mutual.py  ./data/nerf_synthetic/chair \
+                    --data_type synthetic \
+                    --teacher_type mlp \
+                    --ckpt_teacher ./log/train_teacher/mlp_chair/checkpoints/XXX.pth \
+                    --model_type tensors \
+                    --workspace ./log/distill_student/mlp2tensors/chair
+                   
 ```
 
 ## Evaluation
-- evaluate teacher
+
 ```
-python eval.py --ckpt PATH/TO/CKPT.pt --ckpt_teacher PATH/TO/GT.json --test_teacher
-```
-- evaluate student
-```
-python eval.py --ckpt PATH/TO/CKPT.pt --ckpt_teacher PATH/TO/GT.json --test
+# evaluate a hash teacher
+python main_distill_mutual.py ./data/nerf_synthetic/chair  --teacher_type hash --ckpt_teacher PATH/TO/CKPT.pth --test_teacher --data_type synthetic --workspace ./log/eval_teacher/hash_chair
+
+# evaluate a mlp student
+python main_distill_mutual.py ./data/nerf_synthetic/chair --model_type mlp --ckpt PATH/TO/CKPT.pth --test --data_type synthetic --workspace ./log/eval_student/mlp_chair
 ```
 
 where you replace PATH/TO/CKPT.pt with your trained model checkpoint, and PATH/TO/GT.json with the json file in NeRF-Synthetic
