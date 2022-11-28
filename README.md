@@ -1,7 +1,7 @@
 ## One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023)
 
 
-## WIP: [Project Page](http://sk-fun.fun/PVD/) | [Paper](..) | [Datasets]() | [Ckpts]() |
+## WIP: [Project Page](http://sk-fun.fun/PVD/) | [Paper](..) | [Datasets]() | [Ckpts](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing) |
 
 ## Introduction
 In this paper, we propose Progressive Volume Distillation (PVD), a systematic distillation method that allows any-to-any conversions between different neural architectures, including MLP(NeRF), sparse(Plenoxels) or low-rank tensors(TensoRF), hash tables(INGP).
@@ -22,7 +22,7 @@ bash install_extension.sh
 ## Datastes & Pretrained-teacher models
 You can download from WIP: [Synthetic-NeRF](), [LLFF](), [Tanks&Temples]()
 
-You can download from WIP [pretrained-teacher-models](), or just train a teacher model according to the follow guidance.
+You can download from WIP [pretrained-teacher-models](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing), or just train a teacher model according to the follow guidance.
 
 ## Train a teacher
 ```
