@@ -1,4 +1,4 @@
-# One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023)
+## One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023)
 
 
 ## WIP: [Project Page](http://sk-fun.fun/PVD/) | [Latest arXiv](..) | [Datasets]() | [ckpts]() |
