@@ -13,7 +13,7 @@ We recommand using [Anaconda](https://www.anaconda.com/) to setup the environmen
 *Step1*: Create a conda environment named 'pvd'
 ```
 conda create --name pvd python=3.7
-conda activate gnerf
+conda activate pvd
 pip install -r ./tools/requirements.txt
 ```
 *Step2*: Install extension modules. (Draw from the great project [torch-ngp](https://github.com/ashawkey/torch-ngp) that we mainly rely on.)
