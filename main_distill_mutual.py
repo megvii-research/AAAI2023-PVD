@@ -8,25 +8,28 @@ from time import time
 from distill_mutual.provider import NeRFDataset
 from distill_mutual.utils import *
 from IPython import embed
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def save_codes_env(workspace):
-    path = os.path.join(workspace, 'codes_env')
+    path = os.path.join(workspace, "codes_env")
     os.makedirs(path, exist_ok=True)
-    os.system(f'cp *.py {path}')
-    os.system(f'cp -r raymarching {path}')
-    os.system(f'cp -r distill_mutual {path}')
-    os.system(f'cp -r nerf {path}')
+    os.system(f"cp *.py {path}")
+    os.system(f"cp -r raymarching {path}")
+    os.system(f"cp -r distill_mutual {path}")
+    os.system(f"cp -r nerf {path}")
 
 
 def load_from_txt(opt, except_space=""):
     # except_space = {'workspace', 'teacher_type', 'model_type', 'test', 'test_teacher', 'use_spiral_pose', 'ckpt_teacher'}
-    except_space = {'workspace'}
-    with open(os.path.join(opt.ckpt_teacher.split('checkpoints')[0], 'args.txt'), 'r') as f:  # change this path to your own params settings
+    except_space = {"workspace"}
+    with open(
+        os.path.join(opt.ckpt_teacher.split("checkpoints")[0], "args.txt"), "r"
+    ) as f:  # change this path to your own params settings
         load_args = f.readlines()
     for i in range(1, len(load_args)):
-        if '(' in load_args[i]:
+        if "(" in load_args[i]:
             k, v = eval(load_args[i])
         else:
             continue
@@ -92,7 +95,6 @@ if __name__ == "__main__":
         help="batch size of rays at inference to avoid OOM (only valid when NOT using --cuda_ray)",
     )
 
-    ### network backbone options
     parser.add_argument(
         "--fp16", action="store_true", help="use amp mixed precision training"
     )
@@ -156,64 +158,92 @@ if __name__ == "__main__":
         "--clip_text", type=str, default="", help="text input for CLIP guidance"
     )
 
-    parser.add_argument('--loss_type', type=str, default='normL2', choices=['normL2', 'L2', 'normL1', 'L1'])
-    parser.add_argument("--distill_mode", type=str, default="no_fix_mlp", choices=["fix_mlp", "no_fix_mlp"], help="fix mlp for hash")
-    parser.add_argument("--loss_rate_rgb", type=float, default=1.)
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="normL2",
+        choices=["normL2", "L2", "normL1", "L1"],
+    )
+    parser.add_argument(
+        "--distill_mode",
+        type=str,
+        default="no_fix_mlp",
+        choices=["fix_mlp", "no_fix_mlp"],
+        help="fix mlp for hash",
+    )
+    parser.add_argument("--loss_rate_rgb", type=float, default=1.0)
     parser.add_argument("--loss_rate_fea_sc", type=float, default=0.002)
     parser.add_argument("--loss_rate_color", type=float, default=0.002)
     parser.add_argument("--loss_rate_sigma", type=float, default=0.002)
-    parser.add_argument('--l1_reg_weight', type=float, default=1e-4)
+    parser.add_argument("--l1_reg_weight", type=float, default=1e-4)
 
     parser.add_argument("--ckpt_teacher", type=str, default="")
     parser.add_argument("--ckpt_student", type=str, default="")
     parser.add_argument("--sigma_clip_min", type=float, default=-2)
     parser.add_argument("--sigma_clip_max", type=float, default=7)
-    parser.add_argument('--render_stu_first', action="store_true", default=False)
-    parser.add_argument('--use_diagonal_matrix', action="store_true", default=False)
+    parser.add_argument("--render_stu_first", action="store_true", default=False)
+    parser.add_argument("--use_diagonal_matrix", action="store_true", default=False)
 
-    parser.add_argument('--test_teacher', action="store_true", default=False)
-    parser.add_argument('--test_metric', action="store_true", default=False)
-    parser.add_argument('--test_type_trainval', action="store_true", default=False)  # XXX
+    parser.add_argument("--test_teacher", action="store_true", default=False)
+    parser.add_argument("--test_metric", action="store_true", default=False)
+    parser.add_argument(
+        "--test_type_trainval", action="store_true", default=False
+    )  # XXX
 
-    parser.add_argument('--PE', type=int, default=10)
-    parser.add_argument('--nerf_layer_num', type=int, default=8)
-    parser.add_argument('--nerf_layer_wide', type=int, default=256)
-    parser.add_argument('--skip', type=int, default=3)
-    parser.add_argument('--residual', type=int, default=3)
+    parser.add_argument("--PE", type=int, default=10)
+    parser.add_argument("--nerf_layer_num", type=int, default=8)
+    parser.add_argument("--nerf_layer_wide", type=int, default=256)
+    parser.add_argument("--skip", type=int, default=3)
+    parser.add_argument("--residual", type=int, default=3)
 
-    parser.add_argument('--resolution0', type=int, default=300)
-    parser.add_argument('--resolution1', type=int, default=300)
-    parser.add_argument("--upsample_model_steps", type=int, action="append", default=[1e10])
+    parser.add_argument("--resolution0", type=int, default=300)
+    parser.add_argument("--resolution1", type=int, default=300)
+    parser.add_argument(
+        "--upsample_model_steps", type=int, action="append", default=[1e10]
+    )
 
-    parser.add_argument('--teacher_type', default="hash", type=str)
-    parser.add_argument('--model_type', default="hash", type=str)
-    parser.add_argument('--data_type', default="synthetic", type=str, choices=['synthetic', 'llff', 'tank'])
+    parser.add_argument("--teacher_type", default="hash", type=str)
+    parser.add_argument("--model_type", default="hash", type=str)
+    parser.add_argument(
+        "--data_type",
+        default="synthetic",
+        type=str,
+        choices=["synthetic", "llff", "tank"],
+    )
 
-    parser.add_argument('--update_stu_extra', action="store_true", default=False)
-    parser.add_argument('--ema_decay', type=float, default=-1.)
-    parser.add_argument('--grid_size', type=int, default=128)
+    parser.add_argument("--update_stu_extra", action="store_true", default=False)
+    parser.add_argument("--ema_decay", type=float, default=-1.0)
+    parser.add_argument("--grid_size", type=int, default=128)
 
-    parser.add_argument('--plenoxel_degree', type=int, default=3)
-    parser.add_argument('--plenoxel_res', type=str, default="[128,128,128]")
+    parser.add_argument("--plenoxel_degree", type=int, default=3)
+    parser.add_argument("--plenoxel_res", type=str, default="[128,128,128]")
 
-    parser.add_argument('--load_args', action="store_true", default=False)
+    parser.add_argument("--load_args", action="store_true", default=False)
 
-    parser.add_argument('--eval_interval_epoch', default=1e5, type=int, help="")
+    parser.add_argument("--eval_interval_epoch", default=1e5, type=int, help="")
 
-    parser.add_argument('--use_real_data_for_train', action="store_true", default=False,)
+    parser.add_argument(
+        "--use_real_data_for_train",
+        action="store_true",
+        default=False,
+    )
 
-    parser.add_argument('--enable_embed', action="store_true")
-    parser.add_argument('--enable_edit_plenoxel', action="store_true")
-    parser.add_argument('--stage_iters', type=str, default="{'stage1':2000, 'stage2':5000}")
+    parser.add_argument("--enable_embed", action="store_true")
+    parser.add_argument("--enable_edit_plenoxel", action="store_true")
+    parser.add_argument(
+        "--stage_iters", type=str, default="{'stage1':2000, 'stage2':5000}"
+    )
 
     opt = parser.parse_args()
     opt.stage_iters = eval(opt.stage_iters)
     opt.O = True  # always use -O
     opt.render_stu_first = True
-    if opt.model_type == 'mlp':
+    if opt.model_type == "mlp":
         opt.lr *= 0.1
-    if 'tensors' == opt.model_type or 'tensors' == opt.teacher_type:  # plenoxel have no features
-        opt.stage_iters['stage1'] = -1
+    if (
+        "tensors" == opt.model_type or "tensors" == opt.teacher_type
+    ):  # plenoxel have no features
+        opt.stage_iters["stage1"] = -1
     save_codes_env(opt.workspace)
 
     if opt.load_args:
@@ -255,8 +285,8 @@ if __name__ == "__main__":
         grid_size=opt.grid_size,
     )
 
-    print('\nteacher:', model_tea)
-    print(f'\n{opt.model_type}', model_stu)
+    print("\nteacher:", model_tea)
+    print(f"\n{opt.model_type}", model_stu)
 
     criterion = torch.nn.MSELoss(reduction="none")
 
@@ -291,22 +321,32 @@ if __name__ == "__main__":
             p.requires_grad = False
         if opt.distill_mode == "fix_mlp":
             for n, p in model_stu.named_parameters():
-                if 'sigma_net' in n or 'color_net' in n:
+                if "sigma_net" in n or "color_net" in n:
                     p.requires_grad = False
             idx = 1 if opt.model_type == "vm" else 3
             optimizer = lambda model_stu: torch.optim.AdamW(
-                    model_stu.get_params(opt.lr)[idx:], betas=(0.9, 0.99), eps=1e-15, amsgrad=False,
+                model_stu.get_params(opt.lr)[idx:],
+                betas=(0.9, 0.99),
+                eps=1e-15,
+                amsgrad=False,
             )
         else:
             optimizer = lambda model_stu: torch.optim.AdamW(
-                model_stu.get_params(opt.lr), betas=(0.9, 0.99), eps=1e-15, amsgrad=False,
+                model_stu.get_params(opt.lr),
+                betas=(0.9, 0.99),
+                eps=1e-15,
+                amsgrad=False,
             )
         # fake train loader. The real random data for distillating will be generated in utils.py
         train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
         train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
-        opt.iters = opt.iters + opt.iters % len(train_loader)  # will be updated in utils according to the number of random data
+        opt.iters = opt.iters + opt.iters % len(
+            train_loader
+        )  # will be updated in utils according to the number of random data
         max_epoch = np.ceil(opt.iters / len(train_loader)).astype(np.int32)
-        scheduler = lambda optimizer: optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.iters*1, eta_min=5e-5)
+        scheduler = lambda optimizer: optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=opt.iters * 1, eta_min=5e-5
+        )
 
         trainer = Trainer(
             f"{opt.teacher_type}2{opt.model_type}",
@@ -325,14 +365,30 @@ if __name__ == "__main__":
             use_checkpoint=opt.ckpt,
             eval_interval=opt.eval_interval_epoch,
         )
-        upsample_resolutions = (np.round(np.exp(np.linspace(np.log(opt.resolution0), np.log(opt.resolution1), len(opt.upsample_model_steps) + 1)))).astype(np.int32).tolist()[1:]
+        upsample_resolutions = (
+            (
+                np.round(
+                    np.exp(
+                        np.linspace(
+                            np.log(opt.resolution0),
+                            np.log(opt.resolution1),
+                            len(opt.upsample_model_steps) + 1,
+                        )
+                    )
+                )
+            )
+            .astype(np.int32)
+            .tolist()[1:]
+        )
         trainer.upsample_resolutions = upsample_resolutions
         argstxt = sorted(opt.__dict__.items())
-        with open(os.path.join(opt.workspace, 'args.txt'), 'w') as f:
+        with open(os.path.join(opt.workspace, "args.txt"), "w") as f:
             for t in argstxt:
-                f.write(str(t) + '\n')
+                f.write(str(t) + "\n")
         start_time = time.time()
-        valid_loader = NeRFDataset(opt, device=device, type="val", downscale=1).dataloader()
+        valid_loader = NeRFDataset(
+            opt, device=device, type="val", downscale=1
+        ).dataloader()
         test_loader = NeRFDataset(opt, device=device, type="test").dataloader()
         trainer.train(train_loader, valid_loader, max_epoch)
 
@@ -344,13 +400,10 @@ if __name__ == "__main__":
         test_loader = NeRFDataset(opt, device=device, type="test").dataloader()
         print(opt.workspace)
 
-        if opt.mode == "blender":
-            trainer.evaluate(test_loader)  # blender has gt, so evaluate it.
-        else:
-            trainer.test(test_loader)  # colmap doesn't have gt, so just test.
+        trainer.evaluate(test_loader)
 
-        with open(os.path.join(trainer.workspace, 'args.txt'), 'a+') as f:
-            txt = f'\npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}'
+        with open(os.path.join(trainer.workspace, "args.txt"), "a+") as f:
+            txt = f"\npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}"
             f.write(txt)
-        cmd = f'mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}'
+        cmd = f"mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}"
         os.system(cmd)

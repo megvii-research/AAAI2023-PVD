@@ -67,14 +67,12 @@ if __name__ == "__main__":
         help="batch size of rays at inference to avoid OOM (only valid when NOT using --cuda_ray)",
     )
 
-    ### network backbone options
     parser.add_argument(
         "--fp16", action="store_true", help="use amp mixed precision training"
     )
     parser.add_argument("--ff", action="store_true", help="use fully-fused MLP")
     parser.add_argument("--tcnn", action="store_true", help="use TCNN backend")
 
-    ### dataset options
     parser.add_argument(
         "--mode",
         type=str,
@@ -155,59 +153,72 @@ if __name__ == "__main__":
         help="<0 uses no rand pose, =0 only uses rand pose, >0 sample one rand pose every $ known poses",
     )
 
-    parser.add_argument("--distill_mode", type=str, default="no_fix_mlp", choices=["fix_mlp", "no_fix_mlp"])
-    parser.add_argument("--loss_rate_rgb", type=float, default=1.)
+    parser.add_argument(
+        "--distill_mode",
+        type=str,
+        default="no_fix_mlp",
+        choices=["fix_mlp", "no_fix_mlp"],
+    )
+    parser.add_argument("--loss_rate_rgb", type=float, default=1.0)
     parser.add_argument("--loss_rate_fea", type=float, default=0.1)
     parser.add_argument("--loss_rate_fea_sc", type=float, default=0.1)
-    parser.add_argument("--loss_rate_color", type=float, default=0.)
+    parser.add_argument("--loss_rate_color", type=float, default=0.0)
     parser.add_argument("--loss_rate_sigma", type=float, default=0)
-    parser.add_argument("--L1_tensorAB_reg", type=float, default=1e-3, help="reg for tensor_ab")
-    parser.add_argument('--l1_reg_weight', type=float, default=1e-4)
+    parser.add_argument(
+        "--L1_tensorAB_reg", type=float, default=1e-3, help="reg for tensor_ab"
+    )
+    parser.add_argument("--l1_reg_weight", type=float, default=1e-4)
 
     parser.add_argument("--ckpt_teacher", type=str, default="")
     parser.add_argument("--ckpt_student", type=str, default="")
     parser.add_argument("--sigma_clip_min", type=float, default=-2)
     parser.add_argument("--sigma_clip_max", type=float, default=7)
     parser.add_argument("--use_sigma_clip", action="store_true")
-    parser.add_argument('--render_stu_first', action="store_true", default=False)
-    parser.add_argument('--nerf_pe', action="store_true", default=False)
-    parser.add_argument('--use_real_gt', action="store_true", default=False)
-    parser.add_argument('--use_diagonal_matrix', action="store_true", default=False)
-    parser.add_argument('--loss_rate_real_gt', type=float, default=0, help="range in [0, 1]")
-    parser.add_argument('--test_teacher', action="store_true", default=False)
-    parser.add_argument('--test_metric', action="store_true", default=False)
+    parser.add_argument("--render_stu_first", action="store_true", default=False)
+    parser.add_argument("--nerf_pe", action="store_true", default=False)
+    parser.add_argument("--use_real_gt", action="store_true", default=False)
+    parser.add_argument("--use_diagonal_matrix", action="store_true", default=False)
+    parser.add_argument(
+        "--loss_rate_real_gt", type=float, default=0, help="range in [0, 1]"
+    )
+    parser.add_argument("--test_teacher", action="store_true", default=False)
+    parser.add_argument("--test_metric", action="store_true", default=False)
 
-    parser.add_argument('--resolution0', type=int, default=300)
-    parser.add_argument('--resolution1', type=int, default=300)
-    parser.add_argument("--upsample_model_steps", type=int, action="append", default=[1e10])
+    parser.add_argument("--resolution0", type=int, default=300)
+    parser.add_argument("--resolution1", type=int, default=300)
+    parser.add_argument(
+        "--upsample_model_steps", type=int, action="append", default=[1e10]
+    )
 
-    parser.add_argument('--loss_type', type=str, default='L2', choices=['normL2', 'L2', 'normL1', 'L1'])
+    parser.add_argument(
+        "--loss_type", type=str, default="L2", choices=["normL2", "L2", "normL1", "L1"]
+    )
 
-    parser.add_argument('--PE', type=int, default=10)
-    parser.add_argument('--nerf_layer_num', type=int, default=8)
-    parser.add_argument('--nerf_layer_wide', type=int, default=256)
-    parser.add_argument('--skip', type=int, default=3)
-    parser.add_argument('--residual', type=int, default=3)
+    parser.add_argument("--PE", type=int, default=10)
+    parser.add_argument("--nerf_layer_num", type=int, default=8)
+    parser.add_argument("--nerf_layer_wide", type=int, default=256)
+    parser.add_argument("--skip", type=int, default=3)
+    parser.add_argument("--residual", type=int, default=3)
 
-    parser.add_argument('--model_type', default="hash", type=str)
-    parser.add_argument('--teacher_type', default="hash", type=str)
+    parser.add_argument("--model_type", default="hash", type=str)
+    parser.add_argument("--teacher_type", default="hash", type=str)
 
-    parser.add_argument('--use_upsample_vm', action="store_true", default=False)
-    parser.add_argument('--update_stu_extra', action="store_true", default=False)
-    parser.add_argument('--ema_decay', type=float, default=-1)
-    parser.add_argument('--grid_size', type=int, default=128)
+    parser.add_argument("--use_upsample_vm", action="store_true", default=False)
+    parser.add_argument("--update_stu_extra", action="store_true", default=False)
+    parser.add_argument("--ema_decay", type=float, default=-1)
+    parser.add_argument("--grid_size", type=int, default=128)
 
-    parser.add_argument('--plenoxel_degree', type=int, default=3)
-    parser.add_argument('--plenoxel_res', type=str, default="[128,128,128]")
-    parser.add_argument('--just_train_a_model', action="store_true", default=False)
-    parser.add_argument('--data_type', type=str, default="")
+    parser.add_argument("--plenoxel_degree", type=int, default=3)
+    parser.add_argument("--plenoxel_res", type=str, default="[128,128,128]")
+    parser.add_argument("--just_train_a_model", action="store_true", default=False)
+    parser.add_argument("--data_type", type=str, default="")
 
     opt = parser.parse_args()
     opt.just_train_a_model = True
     opt.update_stu_extra = True
     opt.render_stu_first = True
     opt.O = True
-    if opt.model_type == 'mlp':
+    if opt.model_type == "mlp":
         opt.lr *= 0.1
 
     if opt.O:
@@ -270,7 +281,10 @@ if __name__ == "__main__":
         for p in model_tea.parameters():
             p.requires_grad = False
         optimizer = lambda model_stu: torch.optim.AdamW(
-            model_stu.get_params(opt.lr, opt.lr*0.1), betas=(0.9, 0.99), eps=1e-15, amsgrad=False,
+            model_stu.get_params(opt.lr, opt.lr * 0.1),
+            betas=(0.9, 0.99),
+            eps=1e-15,
+            amsgrad=False,
         )
         train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
         valid_loader = NeRFDataset(opt, device=device, type="val").dataloader()
@@ -281,7 +295,9 @@ if __name__ == "__main__":
                 optimizer, lambda iter: 0.1 ** min(iter / opt.iters, 1)
             )
         else:
-            scheduler = lambda optimizer: optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.iters*1)
+            scheduler = lambda optimizer: optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=opt.iters * 1
+            )
         print(scheduler)
 
         trainer = Trainer(
@@ -301,12 +317,26 @@ if __name__ == "__main__":
             use_checkpoint=opt.ckpt,
             eval_interval=500000000,
         )
-        upsample_resolutions = (np.round(np.exp(np.linspace(np.log(opt.resolution0), np.log(opt.resolution1), len(opt.upsample_model_steps) + 1)))).astype(np.int32).tolist()[1:]
+        upsample_resolutions = (
+            (
+                np.round(
+                    np.exp(
+                        np.linspace(
+                            np.log(opt.resolution0),
+                            np.log(opt.resolution1),
+                            len(opt.upsample_model_steps) + 1,
+                        )
+                    )
+                )
+            )
+            .astype(np.int32)
+            .tolist()[1:]
+        )
         trainer.upsample_resolutions = upsample_resolutions
         argstxt = sorted(opt.__dict__.items())
-        with open(os.path.join(opt.workspace, 'args.txt'), 'w') as f:
+        with open(os.path.join(opt.workspace, "args.txt"), "w") as f:
             for t in argstxt:
-                f.write(str(t) + '\n')
+                f.write(str(t) + "\n")
 
         start_time = time()
 
@@ -316,9 +346,9 @@ if __name__ == "__main__":
 
         trainer.evaluate(test_loader)
 
-        with open(os.path.join(trainer.workspace, 'args.txt'), 'a+') as f:
-            txt = f'\npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}'
+        with open(os.path.join(trainer.workspace, "args.txt"), "a+") as f:
+            txt = f"\npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}"
             f.write(txt)
-        cmd = f'mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}'
-        print(f'\n{cmd}\n')
+        cmd = f"mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}"
+        print(f"\n{cmd}\n")
         os.system(cmd)

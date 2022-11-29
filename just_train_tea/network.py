@@ -30,7 +30,7 @@ class NeRFNetwork(NeRFRenderer):
     ):
         super().__init__(bound, **kwargs)
         # sigma network
-        assert model_type in ['hash', 'mlp', 'vm', 'tensors']
+        assert model_type in ["hash", "mlp", "vm", "tensors"]
         self.is_teacher = is_teacher
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
@@ -45,14 +45,18 @@ class NeRFNetwork(NeRFRenderer):
         assert len(self.plenoxel_res) == 3
 
         self.encoder, self.in_dim = get_encoder(
-            encoding, desired_resolution=2048 * bound, num_levels=14,
+            encoding,
+            desired_resolution=2048 * bound,
+            num_levels=14,
         )
 
-        if 'hash' != self.model_type:
+        if "hash" != self.model_type:
             self.encoder = None
 
         if self.model_type == "mlp":
-            self.encoder_nerf_pe, self.in_dim_nerf = get_encoder(encoding="frequency", multires=self.args.PE)
+            self.encoder_nerf_pe, self.in_dim_nerf = get_encoder(
+                encoding="frequency", multires=self.args.PE
+            )
             self.skips = self.args.skip
             self.nerf_layer_num = self.args.nerf_layer_num
             W = self.args.nerf_layer_wide
@@ -73,13 +77,23 @@ class NeRFNetwork(NeRFRenderer):
             self.vec_ids = [2, 1, 0]
             self.resolution = [self.opt.resolution0] * 3
             # mat: paralist[1,16,res0,res0] repeat 3   vec: paralist[1,16,res0,1] repeat 3; repeat3 because decompose 3D grid [H, W, D] to three 2D mat [H, W], [H,D], [W, D] or decompose to three 1D vec [H], [W], [D]
-            self.sigma_mat, self.sigma_vec = self.init_one_vm(self.sigma_rank, self.resolution)
+            self.sigma_mat, self.sigma_vec = self.init_one_vm(
+                self.sigma_rank, self.resolution
+            )
             # mat: paralist[1,48,res0,res0] repeat 3   vec: paralist[1,48,res0,1] repeat 3
-            self.color_mat, self.color_vec = self.init_one_vm(self.color_rank, self.resolution)
+            self.color_mat, self.color_vec = self.init_one_vm(
+                self.color_rank, self.resolution
+            )
             # Linear(in_features=144, out_features=27)
-            self.basis_mat = nn.Linear(sum(self.color_rank), self.color_feat_dim, bias=False)
+            self.basis_mat = nn.Linear(
+                sum(self.color_rank), self.color_feat_dim, bias=False
+            )
         elif self.model_type == "tensors":
-            self.init_plenoxel_volume(s=0.02, fea_dim= self.plenoxel_degree**2*3+1, volume=self.plenoxel_res)
+            self.init_plenoxel_volume(
+                s=0.02,
+                fea_dim=self.plenoxel_degree ** 2 * 3 + 1,
+                volume=self.plenoxel_res,
+            )
 
         elif self.model_type == "hash":
             pass
@@ -95,7 +109,9 @@ class NeRFNetwork(NeRFRenderer):
                     in_dim = hidden_dim
 
                 if l == num_layers - 1:
-                    out_dim = 1 + self.geo_feat_dim  # 1 sigma + 15 SH features for color
+                    out_dim = (
+                        1 + self.geo_feat_dim
+                    )  # 1 sigma + 15 SH features for color
                 else:
                     out_dim = hidden_dim
 
@@ -109,7 +125,8 @@ class NeRFNetwork(NeRFRenderer):
         # self.encoder_dir, self.in_dim_dir = get_encoder(encoding=encoding_dir)
         if self.model_type == "tensors":
             self.encoder_dir, self.in_dim_dir = get_encoder(
-                encoding="sphere_harmonics", degree=self.plenoxel_degree,
+                encoding="sphere_harmonics",
+                degree=self.plenoxel_degree,
             )
 
         else:
@@ -164,7 +181,7 @@ class NeRFNetwork(NeRFRenderer):
         else:
             self.bg_net = None
 
-    def init_plenoxel_volume(self, s=0.1, fea_dim=27+1, volume=[128, 128, 128]):
+    def init_plenoxel_volume(self, s=0.1, fea_dim=27 + 1, volume=[128, 128, 128]):
         tensor = []
         tensor.append(
             torch.nn.Parameter(
@@ -180,8 +197,19 @@ class NeRFNetwork(NeRFRenderer):
         for i in range(len(self.vec_ids)):
             vec_id = self.vec_ids[i]
             mat_id_0, mat_id_1 = self.mat_ids[i]
-            mat.append(nn.Parameter(scale * torch.randn((1, n_component[i], resolution[mat_id_1], resolution[mat_id_0]))))  # [1, R, H, W]
-            vec.append(nn.Parameter(scale * torch.randn((1, n_component[i], resolution[vec_id], 1))))  # [1, R, D, 1] (fake 2d to use grid_sample)
+            mat.append(
+                nn.Parameter(
+                    scale
+                    * torch.randn(
+                        (1, n_component[i], resolution[mat_id_1], resolution[mat_id_0])
+                    )
+                )
+            )  # [1, R, H, W]
+            vec.append(
+                nn.Parameter(
+                    scale * torch.randn((1, n_component[i], resolution[vec_id], 1))
+                )
+            )  # [1, R, D, 1] (fake 2d to use grid_sample)
 
         return nn.ParameterList(mat), nn.ParameterList(vec)
 
@@ -191,15 +219,44 @@ class NeRFNetwork(NeRFRenderer):
         N = x.shape[0]
 
         # plane + line basis
-        mat_coord = torch.stack((x[..., self.mat_ids[0]], x[..., self.mat_ids[1]], x[..., self.mat_ids[2]])).detach().view(3, -1, 1, 2)  # [3, N, 1, 2]
-        vec_coord = torch.stack((x[..., self.vec_ids[0]], x[..., self.vec_ids[1]], x[..., self.vec_ids[2]]))
-        vec_coord = torch.stack((torch.zeros_like(vec_coord), vec_coord), dim=-1).detach().view(3, -1, 1, 2)  # [3, N, 1, 2], fake 2d coord
+        mat_coord = (
+            torch.stack(
+                (
+                    x[..., self.mat_ids[0]],
+                    x[..., self.mat_ids[1]],
+                    x[..., self.mat_ids[2]],
+                )
+            )
+            .detach()
+            .view(3, -1, 1, 2)
+        )  # [3, N, 1, 2]
+        vec_coord = torch.stack(
+            (x[..., self.vec_ids[0]], x[..., self.vec_ids[1]], x[..., self.vec_ids[2]])
+        )
+        vec_coord = (
+            torch.stack((torch.zeros_like(vec_coord), vec_coord), dim=-1)
+            .detach()
+            .view(3, -1, 1, 2)
+        )  # [3, N, 1, 2], fake 2d coord
 
-        sigma_feat = torch.zeros([N,], device=x.device)
+        sigma_feat = torch.zeros(
+            [
+                N,
+            ],
+            device=x.device,
+        )
 
         for i in range(len(self.sigma_mat)):
-            mat_feat = F.grid_sample(self.sigma_mat[i], mat_coord[[i]], align_corners=True).view(-1, N) # [1, R, N, 1] --> [R, N]
-            vec_feat = F.grid_sample(self.sigma_vec[i], vec_coord[[i]], align_corners=True).view(-1, N) # [R, N]
+            mat_feat = F.grid_sample(
+                self.sigma_mat[i], mat_coord[[i]], align_corners=True
+            ).view(
+                -1, N
+            )  # [1, R, N, 1] --> [R, N]
+            vec_feat = F.grid_sample(
+                self.sigma_vec[i], vec_coord[[i]], align_corners=True
+            ).view(
+                -1, N
+            )  # [R, N]
             sigma_feat = sigma_feat + torch.sum(mat_feat * vec_feat, dim=0)
 
         return sigma_feat
@@ -209,19 +266,45 @@ class NeRFNetwork(NeRFRenderer):
         N = x.shape[0]
 
         # plane + line basis
-        mat_coord = torch.stack((x[..., self.mat_ids[0]], x[..., self.mat_ids[1]], x[..., self.mat_ids[2]])).detach().view(3, -1, 1, 2) # [3, N, 1, 2]
-        vec_coord = torch.stack((x[..., self.vec_ids[0]], x[..., self.vec_ids[1]], x[..., self.vec_ids[2]]))
-        vec_coord = torch.stack((torch.zeros_like(vec_coord), vec_coord), dim=-1).detach().view(3, -1, 1, 2) # [3, N, 1, 2], fake 2d coord
+        mat_coord = (
+            torch.stack(
+                (
+                    x[..., self.mat_ids[0]],
+                    x[..., self.mat_ids[1]],
+                    x[..., self.mat_ids[2]],
+                )
+            )
+            .detach()
+            .view(3, -1, 1, 2)
+        )  # [3, N, 1, 2]
+        vec_coord = torch.stack(
+            (x[..., self.vec_ids[0]], x[..., self.vec_ids[1]], x[..., self.vec_ids[2]])
+        )
+        vec_coord = (
+            torch.stack((torch.zeros_like(vec_coord), vec_coord), dim=-1)
+            .detach()
+            .view(3, -1, 1, 2)
+        )  # [3, N, 1, 2], fake 2d coord
 
         mat_feat, vec_feat = [], []
         for i in range(len(self.color_mat)):
-            mat_feat.append(F.grid_sample(self.color_mat[i], mat_coord[[i]], align_corners=True).view(-1, N)) # [1, R, N, 1] --> [R, N]
-            vec_feat.append(F.grid_sample(self.color_vec[i], vec_coord[[i]], align_corners=True).view(-1, N)) # [R, N]
-        
-        mat_feat = torch.cat(mat_feat, dim=0) # [3 * R, N]
-        vec_feat = torch.cat(vec_feat, dim=0) # [3 * R, N]
+            mat_feat.append(
+                F.grid_sample(
+                    self.color_mat[i], mat_coord[[i]], align_corners=True
+                ).view(-1, N)
+            )  # [1, R, N, 1] --> [R, N]
+            vec_feat.append(
+                F.grid_sample(
+                    self.color_vec[i], vec_coord[[i]], align_corners=True
+                ).view(-1, N)
+            )  # [R, N]
 
-        color_feat = self.basis_mat((mat_feat * vec_feat).T) # [N, 3R] --> [N, color_feat_dim]
+        mat_feat = torch.cat(mat_feat, dim=0)  # [3 * R, N]
+        vec_feat = torch.cat(vec_feat, dim=0)  # [3 * R, N]
+
+        color_feat = self.basis_mat(
+            (mat_feat * vec_feat).T
+        )  # [N, 3R] --> [N, color_feat_dim]
 
         return color_feat
 
@@ -249,16 +332,27 @@ class NeRFNetwork(NeRFRenderer):
         # x: [N, 3], in [-bound, bound]  d: [N, 3], nomalized in [-1, 1]
         # sigma
         if self.model_type == "hash":
-            x = self.encoder(x, bound=self.bound)  # out_x[N, 28=num_levels * fea_per_level]
+            x = self.encoder(
+                x, bound=self.bound
+            )  # out_x[N, 28=num_levels * fea_per_level]
         elif self.model_type == "mlp":
             x = self.forward_nerf_mlp(x)  # 28
         elif self.model_type == "vm":
-            x = 2 * (x - self.aabb_train[:3]) / (self.aabb_train[3:] - self.aabb_train[:3]) - 1  # x:[N, 3]
+            x = (
+                2
+                * (x - self.aabb_train[:3])
+                / (self.aabb_train[3:] - self.aabb_train[:3])
+                - 1
+            )  # x:[N, 3]
             sigma_feat = self.get_sigma_feat(x)  # sigma_feat:[N]
             color_feat = self.get_color_feat(x)  # color_feat:[N, 15]
-            sigma_feat = torch.clamp(sigma_feat, self.args.sigma_clip_min, self.args.sigma_clip_max)
+            sigma_feat = torch.clamp(
+                sigma_feat, self.args.sigma_clip_min, self.args.sigma_clip_max
+            )
             # color_feat = torch.clamp(color_feat, self.args.sigma_clip_min, self.args.sigma_clip_max)
-            self.feature_sigma_color = torch.cat([sigma_feat.unsqueeze(-1), color_feat], dim=-1)
+            self.feature_sigma_color = torch.cat(
+                [sigma_feat.unsqueeze(-1), color_feat], dim=-1
+            )
             self.sigma_l = sigma_feat
             sigma = trunc_exp(sigma_feat)  # sigma:[N]
             enc_d = self.encoder_dir(d)  # enc_d:[N, 16]
@@ -273,14 +367,23 @@ class NeRFNetwork(NeRFRenderer):
 
             return sigma, color
         elif self.model_type == "tensors":
-            x = 2 * (x - self.aabb_train[:3]) / (self.aabb_train[3:] - self.aabb_train[:3]) - 1  # x:[N, 3]
+            x = (
+                2
+                * (x - self.aabb_train[:3])
+                / (self.aabb_train[3:] - self.aabb_train[:3])
+                - 1
+            )  # x:[N, 3]
             x = self.compute_plenoxel_fea(x)
             h = x
-            sigma = torch.clamp(h[..., 0], self.args.sigma_clip_min, self.args.sigma_clip_max)
+            sigma = torch.clamp(
+                h[..., 0], self.args.sigma_clip_min, self.args.sigma_clip_max
+            )
             self.sigma_l = sigma
             sigma = trunc_exp(sigma)
             self.sigma = sigma
-            sh = h[..., 1:].view(-1, 3, self.plenoxel_degree**2)  # [N, 3, 9]   ## .permute(1, 0, 2)  # [B, 27]-->[9, B, 3]
+            sh = h[..., 1:].view(
+                -1, 3, self.plenoxel_degree ** 2
+            )  # [N, 3, 9]   ## .permute(1, 0, 2)  # [B, 27]-->[9, B, 3]
             enc_d = self.encoder_dir(d).unsqueeze(1)  # [N, 9]-->[N,1,9]
             color = (sh * enc_d).sum(-1)  # [N, 3]
             color = torch.sigmoid(color)
@@ -296,7 +399,9 @@ class NeRFNetwork(NeRFRenderer):
             h = self.sigma_net[l](h)
             if l != self.num_layers - 1:
                 h = F.relu(h, inplace=True)
-        h[..., 0] = torch.clamp(h[..., 0].clone(), self.args.sigma_clip_min, self.args.sigma_clip_max)
+        h[..., 0] = torch.clamp(
+            h[..., 0].clone(), self.args.sigma_clip_min, self.args.sigma_clip_max
+        )
         # h = torch.clamp(h, self.args.sigma_clip_min, self.args.sigma_clip_max)
         self.feature_sigma_color = h
         self.sigma_l = h[..., 0]
@@ -317,23 +422,41 @@ class NeRFNetwork(NeRFRenderer):
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
         if self.model_type == "hash":
-            x = self.encoder(x, bound=self.bound)  # out_x[N, 32=num_levels * fea_per_level]
+            x = self.encoder(
+                x, bound=self.bound
+            )  # out_x[N, 32=num_levels * fea_per_level]
         elif self.model_type == "mlp":
             x = self.forward_nerf_mlp(x)
         elif self.model_type == "vm":
-            x = 2 * (x - self.aabb_train[:3]) / (self.aabb_train[3:] - self.aabb_train[:3]) - 1
+            x = (
+                2
+                * (x - self.aabb_train[:3])
+                / (self.aabb_train[3:] - self.aabb_train[:3])
+                - 1
+            )
             sigma_feat = self.get_sigma_feat(x)
-            sigma_feat = torch.clamp(sigma_feat, self.args.sigma_clip_min, self.args.sigma_clip_max)
+            sigma_feat = torch.clamp(
+                sigma_feat, self.args.sigma_clip_min, self.args.sigma_clip_max
+            )
             sigma = trunc_exp(sigma_feat)
-            return {'sigma': sigma}
+            return {"sigma": sigma}
         elif self.model_type == "tensors":
-            x = 2 * (x - self.aabb_train[:3]) / (self.aabb_train[3:] - self.aabb_train[:3]) - 1  # x:[N, 3]
+            x = (
+                2
+                * (x - self.aabb_train[:3])
+                / (self.aabb_train[3:] - self.aabb_train[:3])
+                - 1
+            )  # x:[N, 3]
             x = self.compute_plenoxel_fea(x)
             h = x
             # h = torch.clamp(h, self.args.sigma_clip_min, self.args.sigma_clip_max)
-            sigma = trunc_exp(torch.clamp(h[..., 0], self.args.sigma_clip_min, self.args.sigma_clip_max))
+            sigma = trunc_exp(
+                torch.clamp(
+                    h[..., 0], self.args.sigma_clip_min, self.args.sigma_clip_max
+                )
+            )
             sigma = trunc_exp(h[..., 0])
-            return {'sigma': sigma}
+            return {"sigma": sigma}
 
         else:
             raise ValueError(f"not illegal model_type:{self.model_type}")
@@ -373,7 +496,7 @@ class NeRFNetwork(NeRFRenderer):
 
     # allow masked inference
     def color(self, x, d, mask=None, geo_feat=None, **kwargs):
-        assert 1==2
+        assert 1 == 2
         # x: [N, 3] in [-bound, bound]
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
@@ -409,9 +532,13 @@ class NeRFNetwork(NeRFRenderer):
     def density_loss(self):
         loss = 0
         for i in range(len(self.sigma_mat)):
-            loss = loss + torch.mean(torch.abs(self.sigma_mat[i])) + torch.mean(torch.abs(self.sigma_vec[i]))
+            loss = (
+                loss
+                + torch.mean(torch.abs(self.sigma_mat[i]))
+                + torch.mean(torch.abs(self.sigma_vec[i]))
+            )
         return loss
-    
+
     # upsample utils
     @torch.no_grad()
     def upsample_params(self, mat, vec, resolution):
@@ -419,9 +546,22 @@ class NeRFNetwork(NeRFRenderer):
         for i in range(len(self.vec_ids)):
             vec_id = self.vec_ids[i]
             mat_id_0, mat_id_1 = self.mat_ids[i]
-            mat[i] = nn.Parameter(F.interpolate(mat[i].data, size=(resolution[mat_id_1], resolution[mat_id_0]), mode='bilinear', align_corners=True))
-            vec[i] = nn.Parameter(F.interpolate(vec[i].data, size=(resolution[vec_id], 1), mode='bilinear', align_corners=True))
-
+            mat[i] = nn.Parameter(
+                F.interpolate(
+                    mat[i].data,
+                    size=(resolution[mat_id_1], resolution[mat_id_0]),
+                    mode="bilinear",
+                    align_corners=True,
+                )
+            )
+            vec[i] = nn.Parameter(
+                F.interpolate(
+                    vec[i].data,
+                    size=(resolution[vec_id], 1),
+                    mode="bilinear",
+                    align_corners=True,
+                )
+            )
 
     @torch.no_grad()
     def upsample_model(self, resolution):
@@ -436,13 +576,16 @@ class NeRFNetwork(NeRFRenderer):
         half_grid_size = self.bound / self.grid_size
         thresh = min(self.density_thresh, self.mean_density)
 
-        # get new aabb from the coarsest density grid (TODO: from the finest that covers current aabb?)
-        valid_grid = self.density_grid[self.cascade - 1] > thresh # [N]
-        valid_pos = raymarching.morton3D_invert(torch.nonzero(valid_grid)) # [Nz] --> [Nz, 3], in [0, H - 1]
-        #plot_pointcloud(valid_pos.detach().cpu().numpy()) # lots of noisy outliers in hashnerf...
-        valid_pos = (2 * valid_pos / (self.grid_size - 1) - 1) * (self.bound - half_grid_size) # [Nz, 3], in [-b+hgs, b-hgs]
-        min_pos = valid_pos.amin(0) - half_grid_size # [3]
-        max_pos = valid_pos.amax(0) + half_grid_size # [3]
+        valid_grid = self.density_grid[self.cascade - 1] > thresh  # [N]
+        valid_pos = raymarching.morton3D_invert(
+            torch.nonzero(valid_grid)
+        )  # [Nz] --> [Nz, 3], in [0, H - 1]
+        # plot_pointcloud(valid_pos.detach().cpu().numpy()) # lots of noisy outliers in hashnerf...
+        valid_pos = (2 * valid_pos / (self.grid_size - 1) - 1) * (
+            self.bound - half_grid_size
+        )  # [Nz, 3], in [-b+hgs, b-hgs]
+        min_pos = valid_pos.amin(0) - half_grid_size  # [3]
+        max_pos = valid_pos.amax(0) + half_grid_size  # [3]
 
         # shrink model
         reso = torch.LongTensor(self.resolution).to(self.aabb_train.device)
@@ -451,30 +594,44 @@ class NeRFNetwork(NeRFRenderer):
         br = (max_pos - self.aabb_train[:3]) / units
         tl = torch.round(tl).long().clamp(min=0)
         br = torch.minimum(torch.round(br).long(), reso)
-        
+
         for i in range(len(self.vec_ids)):
             vec_id = self.vec_ids[i]
             mat_id_0, mat_id_1 = self.mat_ids[i]
 
-            self.sigma_vec[i] = nn.Parameter(self.sigma_vec[i].data[..., tl[vec_id]:br[vec_id], :])
-            self.color_vec[i] = nn.Parameter(self.color_vec[i].data[..., tl[vec_id]:br[vec_id], :])
+            self.sigma_vec[i] = nn.Parameter(
+                self.sigma_vec[i].data[..., tl[vec_id] : br[vec_id], :]
+            )
+            self.color_vec[i] = nn.Parameter(
+                self.color_vec[i].data[..., tl[vec_id] : br[vec_id], :]
+            )
 
-            self.sigma_mat[i] = nn.Parameter(self.sigma_mat[i].data[..., tl[mat_id_1]:br[mat_id_1], tl[mat_id_0]:br[mat_id_0]])
-            self.color_mat[i] = nn.Parameter(self.color_mat[i].data[..., tl[mat_id_1]:br[mat_id_1], tl[mat_id_0]:br[mat_id_0]])
-        
-        self.aabb_train = torch.cat([min_pos, max_pos], dim=0) # [6]
+            self.sigma_mat[i] = nn.Parameter(
+                self.sigma_mat[i].data[
+                    ..., tl[mat_id_1] : br[mat_id_1], tl[mat_id_0] : br[mat_id_0]
+                ]
+            )
+            self.color_mat[i] = nn.Parameter(
+                self.color_mat[i].data[
+                    ..., tl[mat_id_1] : br[mat_id_1], tl[mat_id_0] : br[mat_id_0]
+                ]
+            )
 
-        print(f'[INFO] shrink slice: {tl.cpu().numpy().tolist()} - {br.cpu().numpy().tolist()}')
-        print(f'[INFO] new aabb: {self.aabb_train.cpu().numpy().tolist()}')
+        self.aabb_train = torch.cat([min_pos, max_pos], dim=0)  # [6]
+
+        print(
+            f"[INFO] shrink slice: {tl.cpu().numpy().tolist()} - {br.cpu().numpy().tolist()}"
+        )
+        print(f"[INFO] new aabb: {self.aabb_train.cpu().numpy().tolist()}")
 
     # optimizer utils
     def get_params(self, lr, lr2=1e-3):
         if self.model_type == "hash":
             params = [
-                {'params': self.encoder.parameters(), 'lr': lr},
-                {'params': self.sigma_net.parameters(), 'lr': lr},
-                {'params': self.encoder_dir.parameters(), 'lr': lr},
-                {'params': self.color_net.parameters(), 'lr': lr},
+                {"params": self.encoder.parameters(), "lr": lr},
+                {"params": self.sigma_net.parameters(), "lr": lr},
+                {"params": self.encoder_dir.parameters(), "lr": lr},
+                {"params": self.color_net.parameters(), "lr": lr},
             ]
         elif self.model_type == "mlp":
             params = [
@@ -485,12 +642,12 @@ class NeRFNetwork(NeRFRenderer):
             ]
         elif self.model_type == "vm":
             params = [
-                {'params': self.color_net.parameters(), 'lr': lr2},
-                {'params': self.sigma_mat, 'lr': lr},
-                {'params': self.sigma_vec, 'lr': lr},
-                {'params': self.color_mat, 'lr': lr},
-                {'params': self.color_vec, 'lr': lr},
-                {'params': self.basis_mat.parameters(), 'lr': lr2},
+                {"params": self.color_net.parameters(), "lr": lr2},
+                {"params": self.sigma_mat, "lr": lr},
+                {"params": self.sigma_vec, "lr": lr},
+                {"params": self.color_mat, "lr": lr},
+                {"params": self.color_vec, "lr": lr},
+                {"params": self.basis_mat.parameters(), "lr": lr2},
             ]
         elif self.model_type == "tensors":
             params = [
