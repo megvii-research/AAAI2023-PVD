@@ -21,9 +21,10 @@ bash ./tools/install_extension.sh
 ```
 
 ## Datastes & Pretrained-teacher models
-You can download from [Synthetic-NeRF](), [LLFF](), [Tanks&Temples]()
+You can download from [Synthetic-NeRF](), [LLFF](), [Tanks&Temples](), or 
 
-You can download from [pretrained-teacher-models](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing), or just train a teacher model according to the follow guidance.
+You can download from [pretrained-teacher-models google](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing), or [pretrained-teacher-models baidu](链接: https://pan.baidu.com/s/1LGLXwLGusX60GpAywLwosg?pwd=34k8 提取码: 34k8)
+You can also train a teacher model according to the follow guidance.
 
 ## Train a teacher
 ```
