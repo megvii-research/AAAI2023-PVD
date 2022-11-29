@@ -9,7 +9,3 @@ cd ..
 cd shencoder
 pip install .
 cd .. 
-
-cd freqencoder
-pip install .
-cd .. 
