@@ -8,6 +8,7 @@ In this paper, we propose Progressive Volume Distillation (PVD), a systematic di
 
 ## Installation
 We recommand using [Anaconda](https://www.anaconda.com/) to setup the environment. Run the following commands:
+
 *Step1*: Create a conda environment named 'pvd'
 ```
 conda create --name pvd python=3.7
