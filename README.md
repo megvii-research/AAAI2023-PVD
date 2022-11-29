@@ -25,7 +25,6 @@ You can download Synthetic-NeRF/LLFF/Tanks&Temples datasets from [google](https:
 
 And download pretrained-teacher-models from [google](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing), or from [baidu](https://pan.baidu.com/s/1LGLXwLGusX60GpAywLwosg?pwd=34k8).
 
-<br>
 You can also train a teacher model according to the follow guidance.
 
 ## Train a teacher
