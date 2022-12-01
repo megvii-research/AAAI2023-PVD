@@ -690,12 +690,6 @@ class Trainer(object):
             self.writer = tensorboardX.SummaryWriter(
                 os.path.join(self.workspace, "run", self.name)
             )
-            self.writer_mean = tensorboardX.SummaryWriter(
-                os.path.join(self.workspace, "run", self.name + "mean")
-            )
-            self.writer_max = tensorboardX.SummaryWriter(
-                os.path.join(self.workspace, "run", self.name + "max")
-            )
 
         for p in self.model_tea.parameters():
             p.requires_grad = False
@@ -757,9 +751,9 @@ class Trainer(object):
             self.writer.close()
 
     def train_one_epoch(self, loader):
-        self.log(
-            f"tttttttttt> Start Training Epoch {self.epoch}/{self.total_epoch}, len(train_data):{len(loader)} lr={self.optimizer.param_groups[0]['lr']:.6f} ..."
-        )
+        # self.log(
+        #    f"tttttttttt> Start Training Epoch {self.epoch}/{self.total_epoch}, len(train_data):{len(loader)} lr={self.optimizer.param_groups[0]['lr']:.6f} ..."
+        # )
 
         total_loss = 0
         total_loss_rgb = 0
@@ -1287,15 +1281,15 @@ class Trainer(object):
                     # save image
                     save_path = os.path.join(
                         self.workspace,
-                        "validation",
+                        loader._data.type,
                         f"{name}_{self.local_step:04d}.png",
                     )
                     save_path_depth = os.path.join(
                         self.workspace,
-                        "validation",
+                        loader._data.type,
                         f"{name}_{self.local_step:04d}_depth.png",
                     )
-                    # save_path_gt = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_gt.png')
+                    # save_path_gt = os.path.join(self.workspace, loader._data.type, f'{name}_{self.local_step:04d}_gt.png')
 
                     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
@@ -1338,7 +1332,7 @@ class Trainer(object):
 
         psnr_tool.psnr_list.sort()
         self.log(
-            f"\neeeeeeeee> eval PSRN Report: Epoch{self.epoch}.  psnr_mean:{np.mean(psnr_tool.psnr_list):.2f}"
+            f"\neeeeeeeee> {loader._data.type} PSRN Report: Epoch{self.epoch}.  psnr_mean:{np.mean(psnr_tool.psnr_list):.2f}"
         )
 
         average_loss = total_loss / self.local_step
@@ -1360,7 +1354,7 @@ class Trainer(object):
                 # self.log(metric.report(), style="blue")
                 psnr = metric.report().split("=")[-1].strip()[:5]
                 self.psnr = float(psnr)
-                if self.use_tensorboardX:
+                if self.use_tensorboardX and loader._data.type == 'val':
                     metric.write(self.writer, self.epoch, prefix="evaluate")
                 metric.clear()
 
@@ -1370,7 +1364,7 @@ class Trainer(object):
         if self.ema is not None:
             self.ema.restore()
         self.log(
-            f"eeeeeeeeee> eval Metric Report: Epoch{self.epoch}. psnr:{psnr} ssim:{self.ssim:.2f} alex:{self.lpips_alex:.2f} vgg:{self.lpips_vgg:.2f}"
+            f"eeeeeeeeee> {loader._data.type} Metric Report: Epoch{self.epoch}. psnr:{psnr} ssim:{self.ssim:.2f} alex:{self.lpips_alex:.2f} vgg:{self.lpips_vgg:.2f}"
         )
 
     def eval_step(self, data):
