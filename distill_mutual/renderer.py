@@ -439,36 +439,13 @@ class NeRFRenderer(nn.Module):
 
             sigmas = self.density_scale * sigmas
 
-            # special case for CCNeRF's residual learning
-            if len(sigmas.shape) == 2:
-                K = sigmas.shape[0]
-                depths = []
-                images = []
-                for k in range(K):
-                    (
-                        weights_sum,
-                        depth,
-                        image,
-                        weighty_weights,
-                        weighty_weights_index,
-                    ) = raymarching.composite_rays_train(
-                        sigmas[k], rgbs[k], deltas, rays
-                    )
-                    image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-                    depth = torch.clamp(depth - nears, min=0) / (fars - nears + 1e-6)
-                    images.append(image.view(*prefix, 3))
-                    depths.append(depth.view(*prefix))
-
-                depth = torch.stack(depths, axis=0)  # [K, B, N]
-                image = torch.stack(images, axis=0)  # [K, B, N, 3]
-            else:
-                weights_sum, depth, image = raymarching.composite_rays_train(
-                    sigmas, rgbs, deltas, rays
-                )
-                image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-                depth = torch.clamp(depth - nears, min=0) / (fars - nears + 1e-6)
-                image = image.view(*prefix, 3)
-                depth = depth.view(*prefix)
+            weights_sum, depth, image = raymarching.composite_rays_train(
+                sigmas, rgbs, deltas, rays
+            )
+            image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+            depth = torch.clamp(depth - nears, min=0) / (fars - nears + 1e-6)
+            image = image.view(*prefix, 3)
+            depth = depth.view(*prefix)
 
         else:
             # allocate outputs

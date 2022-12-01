@@ -339,7 +339,6 @@ if __name__ == "__main__":
             )
         # fake train loader. The real random data for distillating will be generated in utils.py
         train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
-        train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
         opt.iters = opt.iters + opt.iters % len(
             train_loader
         )  # will be updated in utils according to the number of random data
