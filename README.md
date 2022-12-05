@@ -90,3 +90,5 @@ If you find our code or paper useful, please consider citing
 
 ### Acknowledgement
 We would like to thank [ingp](https://github.com/NVlabs/instant-ngp),  [torch-ngp](https://github.com/ashawkey/torch-ngp), [TensoRF](https://github.com/apchenstu/TensoRF), [Plenoxels](https://github.com/sxyu/svox2), [nerf-pytorch](https://github.com/yenchenlin/nerf-pytorch)  for their great frameworks!
+
+Also check out [Arch-Net](https://github.com/megvii-research/Arch-Net) for more on general progressive distillation.
