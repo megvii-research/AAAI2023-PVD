@@ -80,11 +80,11 @@ Please refer to [more running description](https://github.com/megvii-research/AA
 
 If you find our code or paper useful, please consider citing
 ```
-@article{pvd2023,
-  author    = {Fang, Shuangkang and Xu, Weixin and Wang, Heng and Yang, Yi and Wang, Yufeng and Zhou, Shuchang},
-  title     = {One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation},
-  journal   = {AAAI},
-  year      = {2023}
+@article{fang2022one,
+  title={One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation},
+  author={Fang, Shuangkang and Xu, Weixin and Wang, Heng and Yang, Yi and Wang, Yufeng and Zhou, Shuchang},
+  journal={arXiv preprint arXiv:2211.15977},
+  year={2022}
 }
 ```
 
