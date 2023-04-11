@@ -1,6 +1,6 @@
 ## One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023 Oral)
 
-## :partying_face: ***New:*** :partying_face: Code for more powerful PVD-AL will be provided [here]()
+## :partying_face: ***New:*** :partying_face: Code for more powerful PVD-AL will be provided [here](https://github.com/megvii-research/AAAI2023-PVD/tree/PVD-AL)
 
 
 ## [Project Page](http://sk-fun.fun/PVD/) | [Paper](https://arxiv.org/abs/2211.15977) | [Datasets](https://drive.google.com/drive/folders/1U06KAEsW53PolLI3U8hWUhzzIH74QGaP?usp=sharing) | [Ckpts](https://drive.google.com/drive/folders/1GGJf-FTmpCJjmEn-AF_S9-HrLRkFe5Ud?usp=sharing) | [Chinese tutorial](https://github.com/megvii-research/AAAI2023-PVD/blob/main/tools/%E4%B8%AD%E6%96%87%E4%BB%8B%E7%BB%8D.md) | [zhihu](https://zhuanlan.zhihu.com/p/605121286)|
