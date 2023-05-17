@@ -9,7 +9,7 @@
 In this paper, we propose Progressive Volume Distillation (PVD), a systematic distillation method that allows any-to-any conversions between different neural architectures, including MLP(NeRF), sparse(Plenoxels) or low-rank tensors(TensoRF), hash tables(INGP).
 
 ## Installation
-We recommand using [Anaconda](https://www.anaconda.com/) to setup the environment. Run the following commands:
+We recommend using [Anaconda](https://www.anaconda.com/) to setup the environment. Run the following commands:
 
 *Step1*: Create a conda environment named 'pvd'
 ```
