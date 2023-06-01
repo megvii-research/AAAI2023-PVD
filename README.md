@@ -28,9 +28,9 @@
 # Installation
  - **Case1**: If you have already installed [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md), just update the extension modules by:
 
- ```
- bash ./tools/install_extensions.sh
- ```
+    ```
+    bash ./tools/install_extensions.sh
+    ```
 
  - **Case2**:  If you have already installed PVD, just follow the installation steps of [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md).
 
@@ -40,9 +40,9 @@ Reference [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README
 # Tips
 - When you want to use PVDAL, remember to ensure that your code branches in PVD-AL, that is, remember to do the following:
 
- ```
- git checkout PVD-AL
- ```
+    ```
+    git checkout PVD-AL
+   ```
 - Teachers trained using PVD can be directly applied to distillation in PVDAL.
 
 - And generally speaking, the student performance obtained by PVDAL is higher than that of PVD.
