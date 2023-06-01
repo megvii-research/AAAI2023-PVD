@@ -26,7 +26,7 @@
 <br>
 
 # Tips
-- When you want to use PVDAL, remember to ensure that your code branches in PVD-AL, that is, remember to do the following:
+- When you want to use PVDAL, please ensure that your code branche in PVD-AL, that is, remember to do the following:
 
     ```
     git checkout PVD-AL
