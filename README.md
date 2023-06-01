@@ -21,4 +21,4 @@
 
 <br>
 
-# The complete code will be released before May 30th!
+# The complete codes have been released.
