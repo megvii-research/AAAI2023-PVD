@@ -38,10 +38,11 @@
 Reference [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md)
 
 # Tips
-When you want to use PVDAL, remember to ensure that your code branches in PVD-AL, that is, remember to do the following:
+- When you want to use PVDAL, remember to ensure that your code branches in PVD-AL, that is, remember to do the following:
 
  ```
  git checkout PVD-AL
  ```
+- Teachers trained using PVD can be directly applied to distillation in PVDAL.
 
-
+- And generally speaking, the student performance obtained by PVDAL is higher than that of PVD.
