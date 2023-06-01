@@ -439,11 +439,12 @@ class NeRFRenderer(nn.Module):
 
             sigmas = self.density_scale * sigmas
 
-            weights_sum, depth, image = raymarching.composite_rays_train(
-                sigmas, rgbs, deltas, rays
-            )
+            weights_sum, depth, image, weighty_weights, weighty_weights_index = raymarching.composite_rays_train(sigmas, rgbs, deltas, rays)
+            if self.args.enable_embed and self.is_teacher:
+                embed()
             image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-            depth = torch.clamp(depth - nears, min=0) / (fars - nears + 1e-6)
+            depth_for_loss = depth
+            depth = torch.clamp(depth.detach() - nears, min=0) / (fars - nears + 1e-6)
             image = image.view(*prefix, 3)
             depth = depth.view(*prefix)
 
@@ -546,10 +547,13 @@ class NeRFRenderer(nn.Module):
         if self.training:
             return {
                 "depth": depth,
+                'depth_for_loss': depth_for_loss,
                 "image": image,
                 "inherited_params": inherited_params,
                 "sigmas": sigmas,
                 "rays": rays,
+                'weighty_weights': weighty_weights,
+                'weighty_weights_index': weighty_weights_index,
             }
         else:
             return {

@@ -440,7 +440,7 @@ class NeRFRenderer(nn.Module):
 
             else:
 
-                weights_sum, depth, image = raymarching.composite_rays_train(
+                weights_sum, depth, image, _, _ = raymarching.composite_rays_train(
                     sigmas, rgbs, deltas, rays
                 )
                 image = image + (1 - weights_sum).unsqueeze(-1) * bg_color

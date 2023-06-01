@@ -4,10 +4,9 @@ import argparse
 
 from distill_mutual.network import NeRFNetwork
 from functools import partial
-from time import time
 from distill_mutual.provider import NeRFDataset
-from distill_mutual.utils import *
 from IPython import embed
+from distill_mutual.utils import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,6 +52,7 @@ if __name__ == "__main__":
     parser.add_argument("--iters", type=int, default=30000, help="training iters")
     parser.add_argument("--lr", type=float, default=1e-2, help="initial learning rate")
     parser.add_argument("--ckpt", type=str, default="latest")
+    parser.add_argument("--save_ckpt", action="store_true")
     parser.add_argument(
         "--num_rays",
         type=int,
@@ -172,9 +172,10 @@ if __name__ == "__main__":
         help="fix mlp for hash",
     )
     parser.add_argument("--loss_rate_rgb", type=float, default=1.0)
-    parser.add_argument("--loss_rate_fea_sc", type=float, default=0.002)
-    parser.add_argument("--loss_rate_color", type=float, default=0.002)
-    parser.add_argument("--loss_rate_sigma", type=float, default=0.002)
+    parser.add_argument("--loss_rate_fea_sc", type=float, default=2e-3)
+    parser.add_argument("--loss_rate_color", type=float, default=2e-3)
+    parser.add_argument("--loss_rate_sigma", type=float, default=2e-3)
+    parser.add_argument("--loss_rate_depth", type=float, default=0.0)
     parser.add_argument("--l1_reg_weight", type=float, default=1e-4)
 
     parser.add_argument("--ckpt_teacher", type=str, default="")
@@ -222,28 +223,36 @@ if __name__ == "__main__":
 
     parser.add_argument("--eval_interval_epoch", default=1e5, type=int, help="")
 
-    parser.add_argument(
-        "--use_real_data_for_train",
-        action="store_true",
-        default=False,
-    )
-
     parser.add_argument("--enable_embed", action="store_true")
     parser.add_argument("--enable_edit_plenoxel", action="store_true")
     parser.add_argument(
-        "--stage_iters", type=str, default="{'stage1':2000, 'stage2':5000}"
+        "--stage_iters", type=str, default="{'stage1':0, 'stage2':0}"
     )
+
+    # active/curriculum learning
+    parser.add_argument("--use_real_data_for_train", action="store_true", help="only using real dataset for distillating")
+    parser.add_argument("--use_trainval_data_for_train", action="store_true", help="only using real dataset for distillating")
+
+    parser.add_argument("--curri_contain_real_train", action="store_true", help="using random dataset and real dataset for distillating")
+    parser.add_argument('--curriculum_img_interval', default=1, type=int, help="")
+    parser.add_argument('--curriculum_type', default='image+ray+point', type=str, help="the type of curriclum learning, w.r.t 3 levels. it can be one of them or thieir combination ['', 'image', 'ray', 'point']")
+    parser.add_argument('--hard_imgs_ratio', default=0.1, type=float, help="the number of hard imgs in each epoch equals ratio*len(train_imgs)")
+    parser.add_argument('--hard_rays_ratio', default=0.1, type=float, help="the number of hard rays in each iter equals ratio*args.max_ray_batch")
+    parser.add_argument('--collect_hard_rays_from_epoch_rate', default=0, type=float, help="collct hard rays will be started when the epoch > 0.1*total_epoch")
+    parser.add_argument('--hard_rays_pool_size', default=4096*150, type=int, help="the max number of hard rays in hard pool")
+    parser.add_argument('--XXX1', action="store_true")
 
     opt = parser.parse_args()
     opt.stage_iters = eval(opt.stage_iters)
     opt.O = True  # always use -O
-    opt.render_stu_first = True
+    # opt.render_stu_first = True
     if opt.model_type == "mlp":
         opt.lr *= 0.1
     if (
         "tensors" == opt.model_type or "tensors" == opt.teacher_type
     ):  # plenoxel have no features
         opt.stage_iters["stage1"] = -1
+    assert opt.curriculum_type == '' or 'image' in opt.curriculum_type or 'ray' in opt.curriculum_type or 'point' in opt.curriculum_type
     save_codes_env(opt.workspace)
 
     if opt.load_args:
@@ -314,6 +323,12 @@ if __name__ == "__main__":
             trainer.evaluate(test_loader)
         else:
             trainer.test(test_loader)
+        with open(os.path.join(trainer.workspace, "args.txt"), "a+") as f:
+            txt = f"\nckpt:{opt.ckpt_teacher} \npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}"
+            print(txt)
+            f.write(txt)
+        cmd = f"mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}"
+        os.system(cmd)
 
     # ------------------------------------ train-train-train-train  ----------------------------------------------
     else:
@@ -338,7 +353,10 @@ if __name__ == "__main__":
                 amsgrad=False,
             )
         # fake train loader. The real random data for distillating will be generated in utils.py
-        train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
+        if opt.use_trainval_data_for_train:
+            train_loader = NeRFDataset(opt, device=device, type="trainval").dataloader()
+        else:
+            train_loader = NeRFDataset(opt, device=device, type="train").dataloader()
         opt.iters = opt.iters + opt.iters % len(
             train_loader
         )  # will be updated in utils according to the number of random data
@@ -404,5 +422,5 @@ if __name__ == "__main__":
         with open(os.path.join(trainer.workspace, "args.txt"), "a+") as f:
             txt = f"\npsnr: {trainer.psnr:.2f} \nssim: {trainer.ssim:.3f} \nalex: {trainer.lpips_alex:.3f}\nvgg:{trainer.lpips_vgg:.3f}"
             f.write(txt)
-        cmd = f"mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}"
+        cmd = f"mv {trainer.workspace} {trainer.workspace}-pnsr{trainer.psnr}-time{train_time:.2f}s"
         os.system(cmd)

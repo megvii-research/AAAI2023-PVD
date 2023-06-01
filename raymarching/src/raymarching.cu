@@ -510,8 +510,12 @@ __global__ void kernel_composite_rays_train_forward(
     const uint32_t M, const uint32_t N,
     scalar_t * weights_sum,
     scalar_t * depth,
-    scalar_t * image
+    scalar_t * image,
+    scalar_t * weighty_weights,
+    int * weighty_weights_index, // -1 means this index will be not used for calculating loss and backward
+    const float third_curri_Ratio  // in [0, 1]
 ) {
+    // In a nutshell, __restrict__ is a contract that you as a programmer make with the compiler, which says, roughly, "I will only use this pointer to refer to the underlying data"
     // parallel per ray
     const uint32_t n = threadIdx.x + blockIdx.x * blockDim.x;
     if (n >= N) return;
@@ -530,38 +534,43 @@ __global__ void kernel_composite_rays_train_forward(
         image[index * 3 + 2] = 0;
         return;
     }
-
+    // sigma is int, just the address (pointer)
     sigmas += offset;
     rgbs += offset * 3;
     deltas += offset * 2;
+    weighty_weights += offset;
+    weighty_weights_index += offset;
 
     // accumulate 
     uint32_t step = 0;
 
     scalar_t T = 1.0f;
-    scalar_t r = 0, g = 0, b = 0, ws = 0, t = 0, d = 0;
-
+    scalar_t r = 0, g = 0, b = 0, ws = 0, t = 0, d = 0, max_save_index = num_steps * third_curri_Ratio;
+    //scalar_t max_weight = 0, max_weight_index = 0, max_weightR = 0, max_weightR_index = 0;
     while (step < num_steps) {
 
         const scalar_t alpha = 1.0f - __expf(- sigmas[0] * deltas[0]);
         const scalar_t weight = alpha * T;
 
-        // minimal remained transmittence
-        // NOTE: uncomment it won't affect instant-ngp, but totally breaks TensoRF...
-        //if (weight < 1e-4f) break;
+        weighty_weights[step] = weight;
+        weighty_weights_index[step] = offset + step;
+        //if (step < max_save_index) {  //&& weight > 1e-8f
+        //    weighty_weights_index[step] = offset + step;
+        //}
+        //else {
+        //    weighty_weights_index[step] = -1;
+        //}
 
+        //if (weight < 1e-4f) break;  // minimal remained transmittence NOTE: uncomment it won't affect instant-ngp, but totally breaks TensoRF...
         r += weight * rgbs[0];
         g += weight * rgbs[1];
         b += weight * rgbs[2];
 
         t += deltas[1]; // real delta
         d += weight * t;
-
         ws += weight;
 
         T *= 1.0f - alpha;
-
-        //printf("[n=%d] num_steps=%d, alpha=%f, w=%f, T=%f, sum_dt=%f, d=%f\n", n, step, alpha, weight, T, sum_delta, d);
 
         // locate
         sigmas++;
@@ -571,24 +580,51 @@ __global__ void kernel_composite_rays_train_forward(
         step++;
     }
 
-    //printf("[n=%d] rgb=(%f, %f, %f), d=%f\n", n, r, g, b, d);
+    //max_weight=(0.000458, 0.000000), max_weightR=(0.000458, 0.000000) ws=(0.003200) total_point=(7)
+    //max_weight=(0.308526, 9.000000), max_weightR=(0.249171, 9.000000) ws=(1.000000) total_point=(116)
+    //printf("max_weight=(%f, %f), max_weightR=(%f, %f) ws=(%f) total_point=(%d)\n", max_weight, max_weight_index, max_weightR, max_weightR_index, ws, num_steps);
 
     // write
-    weights_sum[index] = ws; // weights_sum
+    weights_sum[index] = ws; // weights_sum. In blender, for the empty space, every point's weight may zero, and the weights_sum may very small
     depth[index] = d;
     image[index * 3] = r;
     image[index * 3 + 1] = g;
     image[index * 3 + 2] = b;
+    
+    int i, j, temp_idx;
+    float temp;
+    for (i = 1; i < num_steps; i++) { //控制趟数
+        temp = weighty_weights[i];
+        temp_idx = weighty_weights_index[i];
+        for(j = i; j > 0 && temp > weighty_weights[j-1]; j--) { // 无序区的数据与有序区的数据元素比较
+           weighty_weights[j] = weighty_weights[j-1]; //将有序区的元素后移
+           weighty_weights_index[j] = weighty_weights_index[j-1];
+        }
+        weighty_weights[j] = temp;
+        weighty_weights_index[j] = temp_idx;
+    }
+    //if (num_steps>=3) printf("%d  (%f  %d)  (%f  %d)  (%f  %d) \n", num_steps, weighty_weights[0], weighty_weights_index[0], weighty_weights[1], weighty_weights_index[1], weighty_weights[2], weighty_weights_index[2]);
+    for (i=0; i<num_steps; i++){
+        if (i > max_save_index || ws < 0.5){
+            weighty_weights_index[i] = -1;  // only part of weights will be used for calculate loss
+        }
+    }
+
+    //for (i=max_save_index; i<num_steps; i++){
+    //    weighty_weights_index[i] = -1;  // only part of weights will be used for calculate loss
+    //}
+
 }
 
 
-void composite_rays_train_forward(at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor rays, const uint32_t M, const uint32_t N, at::Tensor weights_sum, at::Tensor depth, at::Tensor image) {
+void composite_rays_train_forward(at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor rays, const uint32_t M, const uint32_t N, at::Tensor weights_sum, at::Tensor depth, at::Tensor image, at::Tensor weighty_weights, at::Tensor weighty_weights_index, const float third_curri_Ratio) {
 
     static constexpr uint32_t N_THREAD = 128;
+    // Tensor.data_ptr() → int: Returns the address of the first element of self tensor.
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
     sigmas.scalar_type(), "composite_rays_train_forward", ([&] {
-        kernel_composite_rays_train_forward<<<div_round_up(N, N_THREAD), N_THREAD>>>(sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), rays.data_ptr<int>(), M, N, weights_sum.data_ptr<scalar_t>(), depth.data_ptr<scalar_t>(), image.data_ptr<scalar_t>());
+        kernel_composite_rays_train_forward<<<div_round_up(N, N_THREAD), N_THREAD>>>(sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), rays.data_ptr<int>(), M, N, weights_sum.data_ptr<scalar_t>(), depth.data_ptr<scalar_t>(), image.data_ptr<scalar_t>(), weighty_weights.data_ptr<scalar_t>(), weighty_weights_index.data_ptr<int>(), third_curri_Ratio);
     }));
 }
 
@@ -606,12 +642,14 @@ void composite_rays_train_forward(at::Tensor sigmas, at::Tensor rgbs, at::Tensor
 template <typename scalar_t>
 __global__ void kernel_composite_rays_train_backward(
     const scalar_t * __restrict__ grad_weights_sum,
+    const scalar_t * __restrict__ grad_depth,
     const scalar_t * __restrict__ grad_image,
     const scalar_t * __restrict__ sigmas,
     const scalar_t * __restrict__ rgbs, 
     const scalar_t * __restrict__ deltas,
     const int * __restrict__ rays,
     const scalar_t * __restrict__ weights_sum,
+    const scalar_t * __restrict__ depth,
     const scalar_t * __restrict__ image,
     const uint32_t M, const uint32_t N,
     scalar_t * grad_sigmas,
@@ -629,8 +667,10 @@ __global__ void kernel_composite_rays_train_backward(
     if (num_steps == 0 || offset + num_steps >= M) return;
 
     grad_weights_sum += index;
+    grad_depth += index;
     grad_image += index * 3;
     weights_sum += index;
+    depth += index;
     image += index * 3;
     sigmas += offset;
     rgbs += offset * 3;
@@ -642,9 +682,10 @@ __global__ void kernel_composite_rays_train_backward(
     uint32_t step = 0;
     
     scalar_t T = 1.0f;
-    const scalar_t r_final = image[0], g_final = image[1], b_final = image[2], ws_final = weights_sum[0];
-    scalar_t r = 0, g = 0, b = 0, ws = 0;
+    const scalar_t r_final = image[0], g_final = image[1], b_final = image[2], ws_final = weights_sum[0], d_final = depth[0];
+    scalar_t r = 0, g = 0, b = 0, ws = 0, d = 0, t=0;
 
+    //printf("[n=%d] num_steps=%d, grad_depth=%f \n", n, step, grad_depth[0]);
     while (step < num_steps) {
         
         const scalar_t alpha = 1.0f - __expf(- sigmas[0] * deltas[0]);
@@ -655,20 +696,26 @@ __global__ void kernel_composite_rays_train_backward(
         r += weight * rgbs[0];
         g += weight * rgbs[1];
         b += weight * rgbs[2];
+
+        t += deltas[1];
+        d += weight * t;
+
         ws += weight;
 
         T *= 1.0f - alpha;
 
-        // write grad_rgbs
+        // since image = w1*rgb1 + w2*rgb2..., grad_rgb=grad_image*rgb
         grad_rgbs[0] = grad_image[0] * weight;
         grad_rgbs[1] = grad_image[1] * weight;
         grad_rgbs[2] = grad_image[2] * weight;
 
+        // depth only related sigma.
         // write grad_sigmas
         grad_sigmas[0] = deltas[0] * (
             grad_image[0] * (T * rgbs[0] - (r_final - r)) + 
             grad_image[1] * (T * rgbs[1] - (g_final - g)) + 
             grad_image[2] * (T * rgbs[2] - (b_final - b)) +
+            grad_depth[0] * (T * t - (d_final - d)) +
             grad_weights_sum[0] * (T - (ws_final - ws))
         );
 
@@ -686,13 +733,13 @@ __global__ void kernel_composite_rays_train_backward(
 }
 
 
-void composite_rays_train_backward(at::Tensor grad_weights_sum, at::Tensor grad_image, at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor rays, at::Tensor weights_sum, at::Tensor image, const uint32_t M, const uint32_t N, at::Tensor grad_sigmas, at::Tensor grad_rgbs) {
+void composite_rays_train_backward(at::Tensor grad_weights_sum, at::Tensor grad_depth, at::Tensor grad_image, at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor rays, at::Tensor weights_sum, at::Tensor depth, at::Tensor image, const uint32_t M, const uint32_t N, at::Tensor grad_sigmas, at::Tensor grad_rgbs) {
 
     static constexpr uint32_t N_THREAD = 128;
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
     grad_image.scalar_type(), "composite_rays_train_backward", ([&] {
-        kernel_composite_rays_train_backward<<<div_round_up(N, N_THREAD), N_THREAD>>>(grad_weights_sum.data_ptr<scalar_t>(), grad_image.data_ptr<scalar_t>(), sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), rays.data_ptr<int>(), weights_sum.data_ptr<scalar_t>(), image.data_ptr<scalar_t>(), M, N, grad_sigmas.data_ptr<scalar_t>(), grad_rgbs.data_ptr<scalar_t>());
+        kernel_composite_rays_train_backward<<<div_round_up(N, N_THREAD), N_THREAD>>>(grad_weights_sum.data_ptr<scalar_t>(), grad_depth.data_ptr<scalar_t>(), grad_image.data_ptr<scalar_t>(), sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), rays.data_ptr<int>(), weights_sum.data_ptr<scalar_t>(), depth.data_ptr<scalar_t>(), image.data_ptr<scalar_t>(), M, N, grad_sigmas.data_ptr<scalar_t>(), grad_rgbs.data_ptr<scalar_t>());
     }));
 }
 

@@ -25,14 +25,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.utils.data import Dataset, DataLoader
-import trimesh
 import mcubes
 from rich.console import Console
 from torch_ema import ExponentialMovingAverage
 from IPython import embed
-import sys
-
+from scipy.spatial.transform import Slerp, Rotation
 from packaging import version as pver
+from math import sin, cos, pi
 
 device = torch.device("cuda")
 TINY_NUMBER = 1e-6  # float32 only has 7 decimal digits precision
@@ -64,46 +63,95 @@ def nerf_matrix_to_ngp(pose, scale=0.8):
     return new_pose
 
 
-def pose_spherical(theta, phi, radius):
-    # for synthetic. it generates sphere random poses
-    trans_t = lambda t: np.array(
-        [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, t], [0, 0, 0, 1]]
-    ).astype(np.float32)
-    rot_phi = lambda phi: np.array(
-        [
-            [1, 0, 0, 0],
-            [0, np.cos(phi), -np.sin(phi), 0],
-            [0, np.sin(phi), np.cos(phi), 0],
-            [0, 0, 0, 1],
-        ]
-    ).astype(np.float32)
-    rot_theta = lambda th: np.array(
-        [
-            [np.cos(th), 0, -np.sin(th), 0],
-            [0, 1, 0, 0],
-            [np.sin(th), 0, np.cos(th), 0],
-            [0, 0, 0, 1],
-        ]
-    ).astype(np.float32)
-    c2w = trans_t(radius)
-    c2w = rot_phi(phi / 180.0 * np.pi) @ c2w
-    c2w = rot_theta(theta / 180.0 * np.pi) @ c2w
-    c2w = (
-        np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]).astype(
-            np.float32
-        )
-        @ c2w
-    )
-    return c2w
+def gen_hard_poses(poses, data_type='syn'):
+    # gen some hard poses around the given poses. gen meathod: translation and rotation
+    if data_type == 'llff':
+        # XXX 
+        pass
+        trasitions = poses[:, :3, 3]
+        bbox_max = trasitions.max(axis=0)
+        bbox_min = trasitions.min(axis=0)
+        # bbox_max = bbox_max + np.abs(bbox_max) / 20
+        # bbox_min = bbox_min - np.abs(bbox_min) / 20
+        bbox_max = bbox_max + np.abs(bbox_max-bbox_min) / 10
+        bbox_min = bbox_min - np.abs(bbox_max-bbox_min) / 10
+        gen_num = poses.size(0)
+        rand_xs = np.random.uniform(low=bbox_min[0], high=bbox_max[0], size=gen_num)
+        rand_ys = np.random.uniform(low=bbox_min[1], high=bbox_max[1], size=gen_num)
+        rand_zs = np.random.uniform(low=bbox_min[2], high=bbox_max[2], size=gen_num)
+        centers = np.stack([rand_xs, rand_ys, rand_zs], axis=1)
+        poses[:, :3, 3] = centers
+        # return centers.astype(np.float32)
+
+    for i in range(len(poses)):
+        s = 20
+        roll = np.random.uniform(-pi / s, pi / s)
+        pitch = np.random.uniform(-pi / s, pi / s)
+        yaw = np.random.uniform(-pi / s, pi / s)
+        rx = torch.tensor(
+            [[1, 0, 0], [0, cos(roll), -sin(roll)], [0, sin(roll), cos(roll)]]
+        ).cuda()
+        ry = torch.tensor(
+            [[cos(pitch), 0, sin(pitch)], [0, 1, 0], [-sin(pitch), 0, cos(pitch)]]
+        ).cuda()
+        rz = torch.tensor(
+            [[cos(yaw), -sin(yaw), 0], [sin(yaw), cos(yaw), 0], [0, 0, 1]]
+        ).cuda()
+        rxy = torch.mm(rx, ry)
+        rxyz = torch.mm(rz, rxy)
+        poses[i, :3, :3] = torch.mm(rxyz, poses[i, :3, :3])
+    return poses
 
 
-def get_rand_poses(data_type="synthetic", original_loader=None):
-    """
-    Random sampling. Random origins and directions.
-    """
-    from scipy.spatial.transform import Slerp, Rotation
+def get_angle(vector_1, vector_2):
+    unit_vector_1 = vector_1 / np.linalg.norm(vector_1, axis=1)[:, None].repeat(3, axis=1)
+    unit_vector_2 = vector_2 / np.linalg.norm(vector_2, axis=1)[:, None].repeat(3, axis=1)
+    dot_product = np.dot(unit_vector_1, unit_vector_2.T).diagonal()
+    angle = np.arccos(dot_product)
+    return 90 - angle / np.pi * 180
 
+
+def get_rand_poses(data_type="synthetic", original_loader=None, args=None):
     assert data_type in {"synthetic", "llff", "tank"}
+    if data_type in {'synthetic', 'tank'}:
+        real_radius = np.sqrt(original_loader[:, 0, 3] ** 2 + original_loader[:, 1, 3] ** 2 + original_loader[:, 2, 3] ** 2)
+        real_radius_min, real_radius_max = real_radius.min(), real_radius.max()
+        angles = get_angle(original_loader[:, :3, 3], np.array([[0, 1, 0]]).repeat(len(original_loader), axis=0))
+        mi, ma = np.percentile(angles, 5), np.percentile(angles, 95)
+        # mi, ma = angles.min(), angles.max()
+        # print('\nangle:', mi, ma, int(mi-1), int(ma+1), '\n')
+
+    def pose_spherical(theta, phi, radius):
+        # for synthetic. it generates sphere random poses
+        trans_t = lambda t: np.array(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, t], [0, 0, 0, 1]]
+        ).astype(np.float32)
+        rot_phi = lambda phi: np.array(
+            [
+                [1, 0, 0, 0],
+                [0, np.cos(phi), -np.sin(phi), 0],
+                [0, np.sin(phi), np.cos(phi), 0],
+                [0, 0, 0, 1],
+            ]
+        ).astype(np.float32)
+        rot_theta = lambda th: np.array(
+            [
+                [np.cos(th), 0, -np.sin(th), 0],
+                [0, 1, 0, 0],
+                [np.sin(th), 0, np.cos(th), 0],
+                [0, 0, 0, 1],
+            ]
+        ).astype(np.float32)
+        c2w = trans_t(radius)
+        c2w = rot_phi(phi / 180.0 * np.pi) @ c2w
+        c2w = rot_theta(theta / 180.0 * np.pi) @ c2w
+        c2w = (
+            np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]).astype(
+                np.float32
+            )
+            @ c2w
+        )
+        return c2w
 
     def get_single_syn_pose(ph, rand_radius=False):
         theta1 = -180
@@ -112,28 +160,28 @@ def get_rand_poses(data_type="synthetic", original_loader=None):
         phi2 = 5 - ph if (5 - ph) <= 0 else 0
         theta = theta1 + np.random.rand() * (theta2 - theta1)
         phi = phi1 + np.random.rand() * (phi2 - phi1)
-        if rand_radius:
-            radius = np.random.uniform(3, 4)
+        if rand_radius:  # radius may is different for each scene
+            radius = np.random.uniform(real_radius_min/args.scale - 0.01, real_radius_max/args.scale + 0.01)
         else:
             radius = 4
         return pose_spherical(theta, phi, radius)
 
     def get_syn_poses():
-        random_poses = np.array([get_single_syn_pose(8) for _ in range(1)])
+        random_poses = np.array([get_single_syn_pose(8, True) for _ in range(1)])
         for a in range(0, 80):
             rp = np.array(
-                [get_single_syn_pose(a) for _ in range(int(((90 - a) // 15) ** 1 + 1))]
+                    [get_single_syn_pose(a, True) for _ in range(int(((90 - a) // 15) ** 1 + 1))]
             )
             random_poses = np.concatenate([random_poses, rp], axis=0)
         for i in range(len(random_poses)):
-            random_poses[i] = nerf_matrix_to_ngp(random_poses[i])
+            random_poses[i] = nerf_matrix_to_ngp(random_poses[i], scale=args.scale)  # args.scale
         print(f"\nlen(train data): {len(random_poses)}\n")
         random_poses = torch.from_numpy(random_poses).cuda()
         return random_poses
 
     def get_tank_poses():
-        random_poses = np.array([get_single_syn_pose(8) for _ in range(1)])
-        for a in range(5, 20):
+        random_poses = np.array([get_single_syn_pose(int(mi + (ma-mi)/2), True) for _ in range(1)])
+        for a in range(int(mi-1), int(ma+1)):
             rp = np.array(
                 [
                     get_single_syn_pose(a, True)
@@ -142,7 +190,7 @@ def get_rand_poses(data_type="synthetic", original_loader=None):
             )
             random_poses = np.concatenate([random_poses, rp], axis=0)
         for i in range(len(random_poses)):
-            random_poses[i] = nerf_matrix_to_ngp(random_poses[i])
+            random_poses[i] = nerf_matrix_to_ngp(random_poses[i], scale=args.scale)
         print(f"\nlen(train data): {len(random_poses)}\n")
         random_poses = torch.from_numpy(random_poses).cuda()
         return random_poses
@@ -152,13 +200,13 @@ def get_rand_poses(data_type="synthetic", original_loader=None):
             return vectors / (torch.norm(vectors, dim=-1, keepdim=True) + 1e-10)
 
         size = len(centers)
+        # lookat
         forward_vector = -normalize(centers)
         up_vector = (
             torch.FloatTensor([0, -1, 0]).to(device).unsqueeze(0).repeat(size, 1)
         )  # confused at the coordinate system...
         right_vector = normalize(torch.cross(forward_vector, up_vector, dim=-1))
         up_vector = normalize(torch.cross(right_vector, forward_vector, dim=-1))
-
         poses = (
             torch.eye(4, dtype=torch.float, device=device)
             .unsqueeze(0)
@@ -167,6 +215,27 @@ def get_rand_poses(data_type="synthetic", original_loader=None):
         poses[:, :3, :3] = torch.stack(
             (right_vector, up_vector, forward_vector), dim=-1
         )
+        hands_mm = torch.tensor(
+            [[-1., 0, 0], [0, 1., 0], [0, 0, 1.]]
+        ).cuda()
+        for i in range(len(poses)):
+            s = 20
+            roll = np.random.uniform(-pi / s, pi / s)
+            pitch = np.random.uniform(-pi / s, pi / s)
+            yaw = np.random.uniform(-pi / s, pi / s)
+            rx = torch.tensor(
+                [[1, 0, 0], [0, cos(roll), -sin(roll)], [0, sin(roll), cos(roll)]]
+            ).cuda()
+            ry = torch.tensor(
+                [[cos(pitch), 0, sin(pitch)], [0, 1, 0], [-sin(pitch), 0, cos(pitch)]]
+            ).cuda()
+            rz = torch.tensor(
+                [[cos(yaw), -sin(yaw), 0], [sin(yaw), cos(yaw), 0], [0, 0, 1]]
+            ).cuda()
+            rxy = torch.mm(rx, ry)
+            rxyz = torch.mm(rz, rxy)
+            poses[i, :3, :3] = torch.mm(rxyz, poses[i, :3, :3])
+            poses[i, :3, :3] = torch.mm(hands_mm, poses[i, :3, :3])
         poses[:, :3, 3] = centers
         return poses
 
@@ -174,17 +243,23 @@ def get_rand_poses(data_type="synthetic", original_loader=None):
         def get_rand_cam_centers_from_bbox(poses, gen_num=30):
             # use poses to estimate the bbox of the camera
             trasitions = poses[:, :3, 3]
-            bbox_max = trasitions.max(axis=0) + 1e-6
-            bbox_min = trasitions.min(axis=0) - 1e-6
+            bbox_max = trasitions.max(axis=0)
+            bbox_min = trasitions.min(axis=0)
+            # bbox_max = bbox_max + np.abs(bbox_max) / 2
+            # bbox_min = bbox_min - np.abs(bbox_min) / 2
+            bbox_max = bbox_max + np.abs(bbox_max-bbox_min) / 10  # using percentile to ignore outlier
+            bbox_min = bbox_min - np.abs(bbox_max-bbox_min) / 10
             rand_xs = np.random.uniform(low=bbox_min[0], high=bbox_max[0], size=gen_num)
             rand_ys = np.random.uniform(low=bbox_min[1], high=bbox_max[1], size=gen_num)
             rand_zs = np.random.uniform(low=bbox_min[2], high=bbox_max[2], size=gen_num)
             centers = np.stack([rand_xs, rand_ys, rand_zs], axis=1)
             return centers.astype(np.float32)
-
+        original_loader[:, 2, 3] += 0.5
         centers = get_rand_cam_centers_from_bbox(original_loader)
         random_poses = rand_poses_from_cam_centers(torch.from_numpy(centers).cuda())
-        random_poses[:, 0, 0] = -random_poses[:, 0, 0]
+        original_loader[:, 2, 3] -= 0.5
+        random_poses[:, 2, 3] -= 0.5
+        # random_poses[:, 0, 0] = -random_poses[:, 0, 0]
         return random_poses
 
     if data_type == "synthetic":
@@ -214,6 +289,39 @@ def linear_to_srgb(x):
 @torch.jit.script
 def srgb_to_linear(x):
     return torch.where(x < 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
+
+
+def resample_poses_for_train(psnr_poses, self=None):
+    # note: the smaller the psnr the bigger probility resampled
+    """
+    # 1
+    psnrs = 1 / np.array([i[0] for i in psnr_poses])
+    psnrs = psnrs / psnrs.sum()
+    # 2
+    # psnrs = np.array([50 - i[0] for i in psnr_poses])
+    # psnrs = np.exp(psnrs / T) / sum(np.exp(psnrs / T))
+    """
+    # 3
+    def get_T(epoch, total_epoch, T_max, T_min):
+        T = T_max - (T_max - T_min) * epoch / total_epoch
+        return T
+
+    T_annealing = eval(self.args.T_annealing)
+    T = get_T(self.epoch, self.total_epoch, T_annealing[0], T_annealing[1])
+
+    psnrs = np.array([50 - i[0] for i in psnr_poses])
+    psnrs = np.exp(psnrs / T) / sum(np.exp(psnrs / T))
+
+    weights = np.cumsum(psnrs)
+    rnds = np.random.random(
+        len(psnr_poses)
+    )  # XXX method(1) random all; method(2) random all-2 and substitute 2
+    new_pose_index = np.searchsorted(weights, rnds)
+    self.log(
+        f"eeeeeeeeee> T:{T:.2f} resample probability min:{psnrs[-1]:.4f}  max{psnrs[0]:.4f} max/min={psnrs[0]/psnrs[-1]:.4f} \n new_index{sorted(new_pose_index)}\n"
+    )
+    new_poses = torch.stack([psnr_poses[i][1] for i in new_pose_index], axis=0)
+    return new_poses
 
 
 def compute_ssim(
@@ -410,11 +518,9 @@ def seed_everything(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = True
 
 
-def torch_vis_2d(x, renormalize=False):
+def torch_vis_2d(x, renormalize=False):  # XXX
     # x: [3, H, W] or [1, H, W] or [H, W]
     import matplotlib.pyplot as plt
     import numpy as np
@@ -439,8 +545,7 @@ def torch_vis_2d(x, renormalize=False):
     plt.show()
 
 
-def extract_fields(bound_min, bound_max, resolution, query_func, S=128):
-
+def extract_fields(bound_min, bound_max, resolution, query_func, S=128):  # XXX
     X = torch.linspace(bound_min[0], bound_max[0], resolution).split(S)
     Y = torch.linspace(bound_min[1], bound_max[1], resolution).split(S)
     Z = torch.linspace(bound_min[2], bound_max[2], resolution).split(S)
@@ -470,7 +575,7 @@ def extract_fields(bound_min, bound_max, resolution, query_func, S=128):
     return u
 
 
-def extract_geometry(bound_min, bound_max, resolution, threshold, query_func):
+def extract_geometry(bound_min, bound_max, resolution, threshold, query_func):  # XXX
     # print('threshold: {}'.format(threshold))
     u = extract_fields(bound_min, bound_max, resolution, query_func)
 
@@ -513,6 +618,7 @@ class PSNRMeter:
             preds, truths
         )  # [B, N, 3] or [B, H, W, 3], range[0, 1]
 
+        # simplified since max_pixel_value is 1 here.
         psnr = -10 * np.log10(np.mean((preds - truths) ** 2))
         self.psnr_list.append(psnr)
         self.V += psnr
@@ -597,18 +703,18 @@ class Trainer(object):
         if optimizer is None:
             self.optimizer = optim.AdamW(
                 self.model_stu.parameters(), lr=0.001, weight_decay=5e-4
-            )  # naive adam
+            )
         else:
             self.optimizer = optimizer(self.model_stu)
 
         if lr_scheduler is None:
             self.lr_scheduler = optim.lr_scheduler.LambdaLR(
                 self.optimizer, lr_lambda=lambda epoch: 1
-            )  # fake scheduler
+            )
         else:
             self.ls = lr_scheduler
             self.lr_scheduler = lr_scheduler(self.optimizer)
-        if ema_decay is not None and ema_decay > 0:
+        if ema_decay is not None and ema_decay > 0:  # ema_decay=0.95
             self.ema = ExponentialMovingAverage(
                 self.model_stu.parameters(), decay=ema_decay
             )
@@ -654,7 +760,7 @@ class Trainer(object):
 
         if (
             self.workspace is not None
-        ):  # only load state_dict for teacher and share backbone for student
+        ):  # only load state_dict for teacher and backbone for student
             self.log(f"[INFO] Loading teacher ckpt from {self.opt.ckpt_teacher} ...")
             self.load_teacher_checkpoint()
             self.log(self.model_tea)
@@ -662,12 +768,6 @@ class Trainer(object):
             self.log(self.model_stu)
             # self.model_tea.reset_extra_state()
             # self.model_stu.reset_extra_state()
-        """
-        if opt.rand_pose >= 0: # =0 means only using CLIP loss, >0 means a hybrid mode.
-            from nerf.clip_utils import CLIPLoss
-            self.clip_loss = CLIPLoss(self.device)
-            self.clip_loss.prepare_text([self.opt.clip_text]) # only support one text prompt now...
-        """
 
     def __del__(self):
         if self.log_ptr:
@@ -684,7 +784,9 @@ class Trainer(object):
 
     def train(self, train_loader, valid_loader, max_epochs):
         self.hard_rays_pool = [torch.tensor([]).cuda(), torch.tensor([]).cuda()]
+        self.hard_imgs_pool = torch.tensor([]).cuda()
         self.is_hard_rays_pool_full = False
+        self.is_hard_imgs_pool_full = False
 
         if self.use_tensorboardX and self.local_rank == 0:
             self.writer = tensorboardX.SummaryWriter(
@@ -697,16 +799,22 @@ class Trainer(object):
 
         # get a ref to error_map
         self.error_map = train_loader._data.error_map
+        scene = self.args.path.split('/')[-1]
+        # np.save(f'/data/nerf/PVD_Plus/real_pose_npy/{self.args.data_type}_{scene}.npy', train_loader._data.poses.detach().cpu().numpy())
+        # print(f'\n save {scene} real poses \n')
 
-        if (
-            not self.args.use_real_data_for_train
-        ):  # using random poses to calculate max_epochs.
+        if not self.args.use_real_data_for_train:  # updating epochs and scheduler by random poses
             random_poses = get_rand_poses(
                 data_type=self.args.data_type,
                 original_loader=copy.deepcopy(
                     train_loader._data.poses.detach().cpu().numpy()
                 ),
+                args=self.args
             )
+            if self.args.curri_contain_real_train:  # using random_poses and real train pose for distillation
+                random_poses = torch.cat(
+                    [random_poses, train_loader._data.poses], axis=0
+                )
             self.opt.iters = int(
                 (self.opt.iters // len(random_poses)) * len(random_poses)
             )
@@ -717,49 +825,84 @@ class Trainer(object):
             self.lr_scheduler = scheduler(self.optimizer)
 
         self.total_epoch = max_epochs
+        self.max_epochs = max_epochs
         self.log(f"\n----------------total epoch:{max_epochs} -----------\n")
 
         self.real_train_poses = copy.deepcopy(train_loader._data.poses)
         for epoch in range(self.epoch, max_epochs + 1):
             self.epoch = epoch
-            if not self.args.use_real_data_for_train:
-                print(f"\n generate new random poses at epoch{self.epoch}")
+            if (self.epoch % 1 == 0 or self.epoch == 1) and not (
+                self.args.use_real_data_for_train
+            ):
+                self.log(f"\n generate new poses at epoch{self.epoch}/{self.total_epoch} \n")
                 random_poses = get_rand_poses(
                     data_type=self.args.data_type,
                     original_loader=self.real_train_poses.detach().cpu().numpy(),
+                    args=self.args
                 )
+                if self.args.curri_contain_real_train:
+                    random_poses = torch.cat(
+                        [random_poses, self.real_train_poses], axis=0
+                    )
                 train_loader._data.poses = copy.deepcopy(random_poses)
                 train_loader._data.images = train_loader._data.images[:1].expand(
                     len(random_poses), -1, -1, -1
                 )
                 train_loader = train_loader._data.dataloader()
+                # curriculum_train_loader used for metric the weight of curriculum learning. Therefore, it should be fixed by deepcopy in the metric process
+                self.curriculum_train_loader = copy.deepcopy(train_loader)
+
+            if (
+                self.epoch % self.args.curriculum_img_interval == 0
+                and "image" in self.args.curriculum_type
+                and self.epoch > 3
+            ):
+                img_ratio = self.args.hard_imgs_ratio
+                psnr_pose_ascend = self.psnr_pose_ascend[:int(img_ratio * len(train_loader)):]
+                cur_epoch_hard_poses = torch.stack([p[1] for p in psnr_pose_ascend], dim=0)
+                if self.is_hard_imgs_pool_full:
+                    # self.log(f"\n add hard poses at epoch{self.epoch} \n")
+                    random_sample_idxs = torch.randperm(len(self.hard_imgs_pool), device=device)[:int(img_ratio * len(train_loader))]
+                    hard_poses = gen_hard_poses(self.hard_imgs_pool[random_sample_idxs])
+                    self.hard_imgs_pool[random_sample_idxs] = cur_epoch_hard_poses
+                    # random_sample_idxs = torch.randperm(len(train_loader), device=device)[:int(0.1 * len(train_loader))]
+                    # train_loader._data.poses[random_sample_idxs, :, :] = hard_poses
+                    random_replace_idxs = torch.randperm(len(train_loader), device=device)[:int(img_ratio * len(train_loader))]
+                    train_loader._data.poses[random_replace_idxs] = hard_poses
+                    # train_loader._data.images = train_loader._data.images[:1].expand(len(random_poses), -1, -1, -1)
+                    train_loader = train_loader._data.dataloader()
+                    self.log(f"\n loader len:{len(train_loader)} \n")
+                else:
+                    self.hard_imgs_pool = torch.cat([self.hard_imgs_pool, cur_epoch_hard_poses], dim=0)
+                    if self.hard_imgs_pool.size(0) > 100:
+                        self.is_hard_imgs_pool_full = True
+                        self.log(
+                            "\n\n((((((((((((the hard_imgs_pool is full!!!!!!))))))))))))\n\n"
+                        )
+            # if self.epoch == (max_epochs-1) and 'image' in self.args.curriculum_type:
+            #    np.save(f'{self.args.workspace}/hard.npy', self.hard_imgs_pool.detach().cpu().numpy())
+            #    np.save(f'{self.args.workspace}/cur_hard.npy', self.hard_imgs_pool.detach().cpu().numpy())
             self.train_one_epoch(train_loader)
             print("\n", self.workspace, "\n")
 
-            if (
-                self.workspace is not None
-                and self.local_rank == 0
-                and self.epoch > max_epochs - 1
-            ):
-                self.save_checkpoint(full=False, best=False)
+            if self.epoch > max_epochs - 1 and self.args.save_ckpt:
+                self.save_checkpoint(full=False, best=False)   # save the last epoch 
 
             if self.epoch % self.eval_interval == 0:
                 self.evaluate_one_epoch(valid_loader)
-                self.save_checkpoint(full=False, best=True)  # #  为了节省存储，暂时不存储pth
+                self.save_checkpoint(full=False, best=True)  # save the best epoch on validation
 
         if self.use_tensorboardX and self.local_rank == 0:
             self.writer.close()
 
     def train_one_epoch(self, loader):
-        # self.log(
-        #    f"tttttttttt> Start Training Epoch {self.epoch}/{self.total_epoch}, len(train_data):{len(loader)} lr={self.optimizer.param_groups[0]['lr']:.6f} ..."
-        # )
-
         total_loss = 0
         total_loss_rgb = 0
+        total_loss_depth = 0
         total_loss_fea_sc = 0
         total_loss_sigma = 0
         total_loss_color = 0
+        # self.psnr_pose_ascend = [0] * len(loader)
 
         psnr_tool = PSNRMeter()
         psnr_tool.clear()
@@ -770,8 +913,9 @@ class Trainer(object):
                 metric.clear()
 
         self.model_stu.train()
-        self.model_tea.train()
+        self.model_tea.train()  # train mode for same rendering with student, but actully do not optimizer any parameters for teacher
 
+        # ref: https://pytorch.org/docs/stable/data.html
         if self.world_size > 1:
             loader.sampler.set_epoch(self.epoch)
 
@@ -784,13 +928,10 @@ class Trainer(object):
         self.local_step = 0
 
         for data in loader:
-            # update grid every 16 steps. It shoule be run in just train a teacher, but not when distillting a student
-            if (
-                self.model_tea.cuda_ray
-                and self.global_step % self.opt.update_extra_interval == 0
-            ):
+            # update grid every 16 steps
+            if self.global_step % self.opt.update_extra_interval == 0:
                 with torch.cuda.amp.autocast(enabled=self.fp16):
-                    if self.opt.update_stu_extra:
+                    if self.opt.update_stu_extra:  # only runing this when just traing a teacher
                         self.model_stu.update_extra_state()
                     else:
                         pass
@@ -807,6 +948,7 @@ class Trainer(object):
                     truths,
                     loss,
                     loss_rgb,
+                    loss_depth,
                     loss_fea_sc,
                     loss_color,
                     loss_sigma,
@@ -824,6 +966,7 @@ class Trainer(object):
             loss_val = loss.item()
             total_loss += loss_val
             total_loss_rgb += loss_rgb
+            total_loss_depth += loss_depth
             total_loss_sigma += loss_sigma
             total_loss_color += loss_color
             total_loss_fea_sc += loss_fea_sc
@@ -863,7 +1006,7 @@ class Trainer(object):
                         )
                     else:
                         pbar.set_description(
-                            f"loss={total_loss/self.local_step:.5f}, rgb={total_loss_rgb/self.local_step:.5f},  lr={cur_lr:.5f}"
+                            f"loss={total_loss/self.local_step:.5f}, rgb={total_loss_rgb/self.local_step:.5f}, depth={total_loss_depth/self.local_step:.5f} lr={cur_lr:.5f}"
                         )
                 else:
                     pbar.set_description(
@@ -871,6 +1014,7 @@ class Trainer(object):
                     )
                 pbar.update(loader.batch_size)
 
+            # only for vm. upsample_resolutions should be setted first in main
             if (
                 self.opt.model_type == "vm"
                 and self.global_step in self.opt.upsample_model_steps
@@ -921,6 +1065,10 @@ class Trainer(object):
             else:
                 self.lr_scheduler.step()
 
+        self.psnr_pose_ascend = copy.deepcopy(psnr_tool.psnr_list)
+        self.psnr_pose_ascend = list(zip(self.psnr_pose_ascend, loader._data.poses))
+        self.psnr_pose_ascend.sort(key=lambda x: x[0])
+
         psnr_tool.psnr_list.sort()
         if self.global_step < self.args.stage_iters["stage1"]:
             self.log(
@@ -935,7 +1083,7 @@ class Trainer(object):
                 f"tttttttttt> Train stage3 Epoch:{self.epoch}. loss_rgb:{total_loss_rgb/self.global_step:.3f} loss_fea_sc:{total_loss_fea_sc/self.local_step:.3f} loss_sigma:{total_loss_sigma/self.local_step:.3f} loss_color:{total_loss_color/self.local_step:.3f}"
             )
             self.log(
-                f"tttttttttt> Train PSNR Epoch {self.epoch}. psnr_min:{psnr_tool.psnr_list[0]:.3f} psnr_max:{psnr_tool.psnr_list[-1]:.3f} psnr_mean:{np.mean(psnr_tool.psnr_list):.3f}"
+                f"tttttttttt> Train PSNR Epoch {self.epoch}/{self.max_epochs}. psnr_min:{psnr_tool.psnr_list[0]:.3f} psnr_max:{psnr_tool.psnr_list[-1]:.3f} psnr_mean:{np.mean(psnr_tool.psnr_list):.3f}"
             )
 
     def get_loss(self, pred, gt):
@@ -956,6 +1104,21 @@ class Trainer(object):
         rays_d = data["rays_d"]  # [B, N, 3]  [1, N=rays_num=4096, 3]
 
         loss = 0.0
+        # if 'ray' in self.args.curriculum_type and self.is_hard_rays_pool_full and self.epoch >= self.total_epoch * self.args.collect_hard_rays_from_epoch_rate:
+        if (
+            ("ray" in self.args.curriculum_type or "point" in self.args.curriculum_type)
+            and self.is_hard_rays_pool_full
+            and self.epoch >= self.total_epoch * self.args.collect_hard_rays_from_epoch_rate
+        ):
+            random_sample_idxs = torch.randperm(
+                self.hard_rays_pool[0].size(1), device=rays_d.device
+            )[: int(self.args.hard_rays_ratio * rays_d.size(1))]
+            rays_o = torch.cat(
+                [rays_o, self.hard_rays_pool[0][:, random_sample_idxs, :]], dim=1
+            )
+            rays_d = torch.cat(
+                [rays_d, self.hard_rays_pool[1][:, random_sample_idxs, :]], dim=1
+            )
 
         # if there is no gt image, we train with CLIP loss.
         if "images" not in data:
@@ -980,9 +1143,6 @@ class Trainer(object):
 
         images = data["images"]  # [B, N, 3/4]
         B, N, C = images.shape
-
-        # if self.opt.color_space == 'linear':
-        #    images[..., :3] = srgb_to_linear(images[..., :3])
 
         if (
             C == 3 or self.model_stu.bg_radius > 0
@@ -1041,8 +1201,10 @@ class Trainer(object):
             )
             pred_rgb_stu = outputs_stu["image"]
         gt_rgb = pred_rgb_tea
-        self.opt.loss_rate_fea_sc = update_loss_rate(self.opt.loss_rate_fea_sc, 0.995)
 
+        # Block-Wise distillation
+
+        self.opt.loss_rate_fea_sc = update_loss_rate(self.opt.loss_rate_fea_sc, 0.995)
         if (
             "stage1" in outputs_stu
             and self.opt.loss_rate_fea_sc > 0.0
@@ -1057,7 +1219,9 @@ class Trainer(object):
                 self.model_stu.feature_sigma_color, self.model_tea.feature_sigma_color
             )
             loss = loss + self.opt.loss_rate_fea_sc * loss_fea_sc
-            return None, None, loss, 0, loss_fea_sc.detach().item(), 0, 0
+            return None, None, loss, 0, 0, loss_fea_sc.detach().item(), 0, 0
+        # self.opt.loss_rate_color = update_loss_rate(self.opt.loss_rate_color, 0.999)
+        # self.opt.loss_rate_sigma = update_loss_rate(self.opt.loss_rate_sigma, 0.999)
         if "stage2" in outputs_stu:
             if self.opt.loss_rate_color > 0.0:
                 assert self.model_stu.color_l.shape == self.model_tea.color_l.shape
@@ -1102,10 +1266,63 @@ class Trainer(object):
                 None,
                 loss,
                 0,
+                0,
                 loss_fea_sc.detach().item(),
                 loss_color.detach().item(),
                 loss_sigma.detach().item(),
             )
+
+        # 挑出当前训练步中的hard rays。这里存在的问题: 该次的hard rays可能已经在pool里了(即添加至本轮训练的部分hard rays在该轮训练后还是学不会)--> 需要实验。
+        if (
+            "ray" in self.args.curriculum_type
+            and self.epoch
+            >= self.total_epoch * self.args.collect_hard_rays_from_epoch_rate
+        ):
+            _, idxs = (
+                (pred_rgb_stu - pred_rgb_tea)
+                .abs()
+                .squeeze()
+                .sum(dim=1)
+                .sort(descending=True)
+            )
+            cur_iter_hard_rays_idxs = idxs[: int(N * self.args.hard_rays_ratio)]
+            if (
+                self.is_hard_rays_pool_full
+            ):  # replace the trained hard rays in this iter with cur new hard rays
+                self.hard_rays_pool[0][:, random_sample_idxs, :] = rays_o[
+                    :, cur_iter_hard_rays_idxs, :
+                ]
+                self.hard_rays_pool[1][:, random_sample_idxs, :] = rays_d[
+                    :, cur_iter_hard_rays_idxs, :
+                ]
+            else:  # just put new hard rays into the hard pool
+                self.hard_rays_pool[0] = torch.cat(
+                    [self.hard_rays_pool[0], rays_o[:, cur_iter_hard_rays_idxs, :]],
+                    dim=1,
+                )
+                self.hard_rays_pool[1] = torch.cat(
+                    [self.hard_rays_pool[1], rays_d[:, cur_iter_hard_rays_idxs, :]],
+                    dim=1,
+                )
+                if self.hard_rays_pool[0].size(1) >= self.args.hard_rays_pool_size:
+                    self.log(
+                        "\n\n((((((((((((the hard_rays_pool is full!!!!!!))))))))))))\n\n"
+                    )
+                    self.is_hard_rays_pool_full = True
+
+        if "point" in self.args.curriculum_type:
+            point_loss_index_tea = outputs_tea["weighty_weights_index"][
+                torch.where(outputs_tea["weighty_weights_index"] != -1)[0]
+            ].long()
+            point_loss_index_stu = outputs_stu["weighty_weights_index"][
+                torch.where(outputs_stu["weighty_weights_index"] != -1)[0]
+            ].long()
+            point_loss_index = torch.cat(
+                (point_loss_index_tea, point_loss_index_stu), dim=0
+            )
+            point_loss_index = torch.unique(point_loss_index)
+        else:
+            point_loss_index = None
 
         if self.opt.loss_type == "normL2":
             loss_rgb = torch.norm(pred_rgb_tea - pred_rgb_stu)
@@ -1117,6 +1334,7 @@ class Trainer(object):
             )  # [B, N, 3] --> [B, N]
             if len(loss_rgb.shape) == 3:  # [K, B, N]
                 loss_rgb = loss_rgb.mean(0)
+            # update error_map  if blender then the error_map is None
             if self.error_map is not None:
                 index = data["index"]  # [B]
                 inds = data["inds_coarse"]  # [B, N]
@@ -1132,6 +1350,10 @@ class Trainer(object):
             raise ValueError("error loss_type")
         loss = loss + loss_rgb * self.opt.loss_rate_rgb
 
+        # loss_depth = torch.norm(outputs_stu["depth"] - outputs_tea["depth"])
+        loss_depth = torch.norm(outputs_stu["depth_for_loss"] - outputs_tea["depth_for_loss"])
+        loss = loss + self.opt.loss_rate_depth * loss_depth
+
         if self.opt.l1_reg_weight > 0.0 and self.opt.model_type == "vm":
             loss = loss + self.model_stu.density_loss() * self.opt.l1_reg_weight
         if (
@@ -1144,7 +1366,8 @@ class Trainer(object):
                 == self.model_tea.feature_sigma_color.shape
             )
             loss_fea_sc = self.get_loss(
-                self.model_stu.feature_sigma_color, self.model_tea.feature_sigma_color
+                self.model_stu.feature_sigma_color[point_loss_index],
+                self.model_tea.feature_sigma_color[point_loss_index],
             )
             loss = loss + self.opt.loss_rate_fea_sc * loss_fea_sc
         elif (
@@ -1162,14 +1385,20 @@ class Trainer(object):
             )
         if self.opt.loss_rate_color > 0.0:
             assert self.model_stu.color_l.shape == self.model_tea.color_l.shape
-            loss_color = self.get_loss(self.model_stu.color_l, self.model_tea.color_l)
+            loss_color = self.get_loss(
+                self.model_stu.color_l[point_loss_index],
+                self.model_tea.color_l[point_loss_index],
+            )
             loss = loss + self.opt.loss_rate_color * loss_color
         else:
             assert self.model_stu.color_l.shape == self.model_tea.color_l.shape
             loss_color = self.get_loss(self.model_stu.color_l, self.model_tea.color_l)
         if self.opt.loss_rate_sigma > 0.0:
             assert self.model_stu.sigma_l.shape == self.model_tea.sigma_l.shape
-            loss_sigma = self.get_loss(self.model_stu.sigma_l, self.model_tea.sigma_l)
+            loss_sigma = self.get_loss(
+                self.model_stu.sigma_l[point_loss_index],
+                self.model_tea.sigma_l[point_loss_index],
+            )
             loss = loss + self.opt.loss_rate_sigma * loss_sigma
         else:
             assert self.model_stu.sigma_l.shape == self.model_tea.sigma_l.shape
@@ -1183,6 +1412,7 @@ class Trainer(object):
             gt_rgb,
             loss,
             loss_rgb_show.detach().item(),
+            loss_depth.detach().item(),
             loss_fea_sc.detach().item(),
             loss_color.detach().item(),
             loss_sigma.detach().item(),
@@ -1195,7 +1425,8 @@ class Trainer(object):
         self.evaluate_one_epoch(loader, name)
         self.use_tensorboardX = use_tensorboardX
 
-    def evaluate_one_epoch(self, loader, name=None):
+    def evaluate_one_epoch(self, loader, is_curriculum=False, name=None):
+        # self.log(f"++> Evaluate at epoch {self.epoch} is_curriculum:{is_curriculum} ...")
         if name is None:
             name = f"{self.name}_ep{self.epoch:04d}"
 
@@ -1237,7 +1468,9 @@ class Trainer(object):
                 self.local_step += 1
 
                 with torch.cuda.amp.autocast(enabled=self.fp16):
-                    preds, preds_depth, truths, loss = self.eval_step(data)
+                    preds, preds_depth, truths, loss = self.eval_step(
+                        data, is_curriculum
+                    )
 
                 # all_gather/reduce the statistics (NCCL only support all_*)
                 if self.world_size > 1:
@@ -1267,7 +1500,6 @@ class Trainer(object):
                 total_loss += loss_val
 
                 if self.local_rank == 0:
-
                     for metric in self.metrics:
                         metric.update(preds, truths)
                     self.lpips_alex += rgb_lpips(truths, preds, "alex")
@@ -1284,14 +1516,20 @@ class Trainer(object):
                         loader._data.type,
                         f"{name}_{self.local_step:04d}.png",
                     )
+                    save_curri_path = os.path.join(
+                        self.workspace,
+                        "curriculum_process",
+                        f"{name}_{self.local_step:04d}.png",
+                    )
                     save_path_depth = os.path.join(
                         self.workspace,
                         loader._data.type,
                         f"{name}_{self.local_step:04d}_depth.png",
                     )
-                    # save_path_gt = os.path.join(self.workspace, loader._data.type, f'{name}_{self.local_step:04d}_gt.png')
+                    # save_path_gt = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_gt.png')
 
                     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    os.makedirs(os.path.dirname(save_curri_path), exist_ok=True)
 
                     if self.opt.color_space == "linear":
                         preds = linear_to_srgb(preds)
@@ -1299,41 +1537,83 @@ class Trainer(object):
                     pred = preds[0].detach().cpu().numpy()
                     truth = truths[0].detach().cpu().numpy()
                     pred_depth = preds_depth[0].detach().cpu().numpy()
-                    cv2.imwrite(
-                        save_path,
-                        cv2.cvtColor((pred * 255).astype(np.uint8), cv2.COLOR_RGB2BGR),
-                    )
-                    cv2.imwrite(save_path_depth, (pred_depth * 255).astype(np.uint8))
-                    frames.append((pred * 255).astype(np.uint8))
-                    frames_depth.append((pred_depth * 255).astype(np.uint8))
+                    if (
+                        is_curriculum
+                    ):  # only save the worst ten rendering results and save path is curiculum; the saved img constructed by [tea_out, stu_out, Gray(diff_map)]
+                        if self.local_step < 10:
+                            error_map = (
+                                (truths[0] - preds[0]).abs().detach().cpu().numpy()
+                            )
+                            error_map = (
+                                cv2.cvtColor(
+                                    (error_map * 255).astype(np.uint8),
+                                    cv2.COLOR_RGB2GRAY,
+                                ).astype(np.float32)
+                                / 255.0
+                            )
+                            error_map = error_map[:, :, None].repeat(3, axis=2)
+                            img = np.concatenate([truth, pred, error_map], axis=1)
+                            img = cv2.resize(
+                                img, (img.shape[1] // 2, img.shape[0] // 2)
+                            )
+                            cv2.imwrite(
+                                save_curri_path,
+                                cv2.cvtColor(
+                                    (img * 255).astype(np.uint8), cv2.COLOR_RGB2BGR
+                                ),
+                            )
+                    elif self.local_step < 3 or self.opt.test or self.opt.test_teacher or self.opt.test_type_trainval:
+                        cv2.imwrite(
+                            save_path,
+                            cv2.cvtColor(
+                                (pred * 255).astype(np.uint8), cv2.COLOR_RGB2BGR
+                            ),
+                        )
+                        cv2.imwrite(
+                            save_path_depth, (pred_depth * 255).astype(np.uint8)
+                        )
+                        frames.append((pred * 255).astype(np.uint8))
+                        frames_depth.append((pred_depth * 255).astype(np.uint8))
 
                     pbar.set_description(
                         f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f})"
                     )
                     pbar.update(loader.batch_size)
 
-            print(
-                f"\n----video num(frames): {len(frames)} depth video num:{len(frames_depth)}  ----\n"
-            )
-            imageio.mimwrite(
-                os.path.join(os.path.dirname(save_path), "video.mp4"),
-                frames,
-                fps=int(30 * 0.7),
-                macro_block_size=8,
-            )
-            imageio.mimwrite(
-                os.path.join(os.path.dirname(save_path), "video_depth.mp4"),
-                frames_depth,
-                fps=int(30 * 0.7),
-                macro_block_size=8,
-            )
+            if not is_curriculum:
+                print(
+                    f"\n----video num(frames): {len(frames)} depth video num:{len(frames_depth)}  ----\n"
+                )
+                imageio.mimwrite(
+                    os.path.join(os.path.dirname(save_path), "video.mp4"),
+                    frames,
+                    fps=int(30 * 0.7),
+                    macro_block_size=8,
+                )
+                imageio.mimwrite(
+                    os.path.join(os.path.dirname(save_path), "video_depth.mp4"),
+                    frames_depth,
+                    fps=int(30 * 0.7),
+                    macro_block_size=8,
+                )
 
         psnr_tool = self.metrics[0]
+        if is_curriculum:
+            self.psnr_pose_ascend = copy.deepcopy(psnr_tool.psnr_list)
+            self.psnr_pose_ascend = list(zip(self.psnr_pose_ascend, loader._data.poses))
+            self.psnr_pose_ascend.sort(key=lambda x: x[0])
 
         psnr_tool.psnr_list.sort()
         self.log(
-            f"\neeeeeeeee> {loader._data.type} PSRN Report: Epoch{self.epoch}.  psnr_mean:{np.mean(psnr_tool.psnr_list):.2f}"
+            f"\neeeeeeeee> {loader._data.type} PSRN Report: Epoch{self.epoch}-curri{is_curriculum}. psnr_min:{psnr_tool.psnr_list[0]:.2f} psnr_max:{psnr_tool.psnr_list[-1]:.2f} psnr_mean:{np.mean(psnr_tool.psnr_list):.2f}"
         )
+        self.writer.add_scalar("eval/psnr_min", psnr_tool.psnr_list[0], self.epoch)
+        self.writer.add_scalar("eval/psnr_max", psnr_tool.psnr_list[-1], self.epoch)
+        self.writer.add_scalar("eval/psnr_mean", sum(psnr_tool.psnr_list)/len(psnr_tool.psnr_list), self.epoch)
+        if is_curriculum:
+            self.writer.add_scalar("psnr", psnr_tool.psnr_list[0], self.epoch)
+            #  self.writer_mean.add_scalar("psnr", np.mean(psnr_tool.psnr_list), self.epoch)
+            #  self.writer_max.add_scalar("psnr", psnr_tool.psnr_list[-1], self.epoch)
 
         average_loss = total_loss / self.local_step
         self.stats["valid_loss"].append(average_loss)
@@ -1354,8 +1634,8 @@ class Trainer(object):
                 # self.log(metric.report(), style="blue")
                 psnr = metric.report().split("=")[-1].strip()[:5]
                 self.psnr = float(psnr)
-                if self.use_tensorboardX and loader._data.type == 'val':
-                    metric.write(self.writer, self.epoch, prefix="evaluate")
+                # if self.use_tensorboardX and loader._data.type == 'val':
+                #    metric.write(self.writer, self.epoch, prefix="evaluate")
                 metric.clear()
 
         self.ssim /= self.local_step
@@ -1364,10 +1644,10 @@ class Trainer(object):
         if self.ema is not None:
             self.ema.restore()
         self.log(
-            f"eeeeeeeeee> {loader._data.type} Metric Report: Epoch{self.epoch}. psnr:{psnr} ssim:{self.ssim:.2f} alex:{self.lpips_alex:.2f} vgg:{self.lpips_vgg:.2f}"
+            f"eeeeeeeeee> {loader._data.type} Metric Report: Epoch{self.epoch}-curri{is_curriculum}. psnr:{psnr} ssim:{self.ssim:.2f} alex:{self.lpips_alex:.2f} vgg:{self.lpips_vgg:.2f}"
         )
 
-    def eval_step(self, data):
+    def eval_step(self, data, is_curriculum=False):
 
         rays_o = data["rays_o"]  # [B, N, 3]
         rays_d = data["rays_d"]  # [B, N, 3]
@@ -1386,6 +1666,7 @@ class Trainer(object):
         else:
             gt_rgb = images
 
+        # gt should be caled from teacher when using curriculum-learning
         outputs = self.model_stu.render(
             rays_o,
             rays_d,
@@ -1394,6 +1675,17 @@ class Trainer(object):
             perturb=False,
             **vars(self.opt),
         )
+        if is_curriculum:
+            self.model_tea.eval()
+            out_tea = self.model_tea.render(
+                rays_o,
+                rays_d,
+                staged=True,
+                bg_color=bg_color,
+                perturb=False,
+                **vars(self.opt),
+            )
+            gt_rgb = out_tea["image"].reshape(B, H, W, 3)
 
         pred_rgb = outputs["image"].reshape(B, H, W, 3)
         pred_depth = outputs["depth"].reshape(B, H, W)
@@ -1485,8 +1777,11 @@ class Trainer(object):
             self.log(f"[WARN] missing keys: {missing_keys}")
         if len(unexpected_keys) > 0:
             self.log(f"[WARN] unexpected keys: {unexpected_keys}")
+
         if self.ema is not None and "ema" in checkpoint_dict:
             self.ema.load_state_dict(checkpoint_dict["ema"])
+        # if self.ema is not None and 'ema' in checkpoint_dict:
+        #     self.ema.load_state_dict(checkpoint_dict['ema'])
 
         if self.model_tea.cuda_ray:
             if "mean_count" in checkpoint_dict:
