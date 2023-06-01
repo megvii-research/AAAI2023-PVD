@@ -21,4 +21,14 @@
 
 <br>
 
-# The complete codes have been released.
+### The complete codes have been released. 
+# Installation
+- Case1: If you have already installed [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md), just update the extension modules by:
+```
+bash ./tools/install_extensions.sh
+```
+
+- Case2:  If you have already installed PVD, just follow the installation steps of [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md).
+
+# Train a teacher and distill a student
+Reference [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md)
