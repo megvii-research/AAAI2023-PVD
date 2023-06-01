@@ -19,7 +19,7 @@ pip install -r ./tools/requirements.txt
 ```
 *Step2*: Install extension modules. (Draw from the great project [torch-ngp](https://github.com/ashawkey/torch-ngp) that we mainly rely on.)
 ```
-bash ./tools/install_extension.sh
+bash ./tools/install_extensions.sh
 ```
 
 ## Datastes & Pretrained-teacher models
