@@ -36,3 +36,12 @@
 
 # Train a teacher and distill a student
 Reference [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md)
+
+# Tips
+When you want to use PVDAL, remember to ensure that your code branches in PVD-AL, that is, remember to do the following:
+
+ ```
+ git checkout PVD-AL
+ ```
+
+
