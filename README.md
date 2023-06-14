@@ -1,7 +1,7 @@
 ## One is All: Bridging the Gap Between Neural Radiance Fields Architectures with Progressive Volume Distillation (AAAI 2023 Oral)
 
  *(We strongly recommend using PVD-AL with better performance).*
-# :partying_face: ***New:*** :partying_face: Code for more powerful PVD-AL is now provided [here](https://github.com/megvii-research/AAAI2023-PVD/tree/PVD-AL). 
+# :partying_face: ***New*** :partying_face: Code for more powerful PVD-AL is now provided [here](https://github.com/megvii-research/AAAI2023-PVD/tree/PVD-AL). 
 
 
 
