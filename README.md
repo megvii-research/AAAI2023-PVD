@@ -19,9 +19,6 @@
 - PVD-AL allows for the fusion of various properties between different structures. Calling PVD-AL multiple times can obtain models with multiple editing properties. It is also possible to convert a scene under a specific model to another model that runs more efficiently to meet the real-time requirements of downstream tasks.
 - The three levels of active learning strategies in PVD-AL are decoupled, flexible, and highly versatile, thus can be also easily applied as plug-in to other distillation tasks that use NeRF-based model as a teacher or student.
 
-<br>
-
-# The complete codes have been released. 
 
 <br>
 
