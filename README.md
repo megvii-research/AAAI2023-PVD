@@ -39,9 +39,9 @@
     bash ./tools/install_extensions.sh
     ```
 
- - **Case2**:  If you not install PVD, just follow the installation steps of [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md).
+ - **Case2**:  If you not install PVD, just follow the installation steps of [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md) on the branch *PVD-AL*.
 
 # Train a teacher and distill a student
-Reference [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md)
+Please refer to the instructions in [PVD](https://github.com/megvii-research/AAAI2023-PVD/blob/main/README.md).
 
 
